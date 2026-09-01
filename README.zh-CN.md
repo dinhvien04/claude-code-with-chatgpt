@@ -84,8 +84,8 @@ ChatGPT 付费订阅（Plus / Pro）的网页版额度往往大量闲置，而�
 
 1. 环境自检：检查 git 与 Node.js ≥ 20，并确保已安装 cloudflared（macOS 用 brew，Windows 用 winget）。
 2. 下载与构建：克隆仓库到 ~/claude-code-with-chatgpt（git clone https://github.com/dinhvien04/claude-code-with-chatgpt.git，已存在则 git pull），执行 corepack pnpm install && corepack pnpm build。
-3. 配置 Skill：将 .claude/skills/chatgpt-collab 安装到当前工作区或 ~/.claude/skills/chatgpt-collab，并更新实际克隆路径。
-4. 启动服务：执行 c2c setup 启动本地桥接守护进程与隧道，获取公网 MCP 地址及一次性配对码。
+3. 配置 Skill 与权限：将 .claude/skills/chatgpt-collab 放置到工作区或 ~/.claude/skills/chatgpt-collab，并在目标工作区执行 `c2c config-allow -w .` 将所需工具权限与沙箱状态写入路径自动配置到 .claude/settings.local.json。
+4. 启动服务：执行 c2c setup -w . 启动本地桥接守护进程与隧道，获取公网 MCP 地址及一次性配对码。
 5. 引导配对：指引我在 ChatGPT 网页版（设置 -> 安全 -> 开发者模式 -> 连接器）完成 Mode C 手动添加连接器与配对。
 6. 验证 MCP 连通性（workspace_info 与只读测试），全部就绪后输出完成清单。
 ```
@@ -108,13 +108,18 @@ corepack pnpm build
 npm link
 ```
 
-### 2. 配置 Claude Code Skill
+### 2. 配置 Claude Code Skill 与设置
 确保在项目根目录或全局存在 `.claude/skills/chatgpt-collab/SKILL.md`。
+
+在目标工作区中运行 `config-allow` 预先配置权限与沙箱状态写入路径：
+```bash
+c2c config-allow -w .
+```
 
 ### 3. 启动 Bridge 桥接服务
 在您的目标项目根目录下运行：
 ```bash
-c2c setup
+c2c setup -w .
 ```
 该命令将自动启动后台回环守护进程并开启 Cloudflare 隧道，终端会显示：
 - **公网 MCP 地址**（例如 `https://xxxx.trycloudflare.com/mcp`）

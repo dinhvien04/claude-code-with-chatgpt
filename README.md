@@ -85,8 +85,8 @@ Please install and configure "claude-code-with-chatgpt" for me:
 
 1. Environment check: Ensure git and Node.js >= 20 are available. Ensure cloudflared is installed (macOS: brew, Windows: winget).
 2. Clone & Build: Clone https://github.com/dinhvien04/claude-code-with-chatgpt.git into ~/claude-code-with-chatgpt (or pull if existing), then run `corepack pnpm install` and `corepack pnpm build`.
-3. Skill Setup: Copy .claude/skills/chatgpt-collab to the local workspace's .claude/skills/chatgpt-collab (or global ~/.claude/skills/chatgpt-collab), setting the checkout path.
-4. Initialization: Run `c2c setup` to launch the local bridge daemon and generate the public pairing URL and one-time code.
+3. Skill & Permission Setup: Copy .claude/skills/chatgpt-collab to the local workspace's .claude/skills/chatgpt-collab (or global ~/.claude/skills/chatgpt-collab). Run `c2c config-allow -w .` in the target workspace to configure auto-approved permissions and sandbox state write paths in .claude/settings.local.json.
+4. Initialization: Run `c2c setup -w .` to launch the local bridge daemon and generate the public pairing URL and one-time code.
 5. Guide me through Mode C pairing in ChatGPT Web (Security -> Developer Mode -> Connectors -> Add Connector).
 6. Verify file-read and workspace_info over MCP, and show a confirmation checklist when ready.
 ```
@@ -100,8 +100,8 @@ Please install and configure "claude-code-with-chatgpt" for me:
 
 1. 环境自检：检查 git 与 Node.js ≥ 20，并确保已安装 cloudflared（macOS 使用 brew，Windows 使用 winget）。
 2. 下载与构建：克隆仓库到 ~/claude-code-with-chatgpt（已存在则 git pull），执行 corepack pnpm install && corepack pnpm build。
-3. 配置 Skill：将 .claude/skills/chatgpt-collab 放置到工作区或 ~/.claude/skills/chatgpt-collab，并更新实际克隆路径。
-4. 启动服务：执行 c2c setup 启动本地桥接守护进程与隧道，获取公网 MCP 地址及一次性配对码。
+3. 配置 Skill 与权限：将 .claude/skills/chatgpt-collab 放置到工作区或 ~/.claude/skills/chatgpt-collab，并在目标工作区执行 `c2c config-allow -w .` 将所需工具权限与沙箱状态写入路径自动配置到 .claude/settings.local.json。
+4. 启动服务：执行 c2c setup -w . 启动本地桥接守护进程与隧道，获取公网 MCP 地址及一次性配对码。
 5. 引导配对：指引我在 ChatGPT 网页版（设置 -> 安全 -> 开发者模式 -> 连接器）完成 Mode C 手动添加连接器与配对。
 6. 验证 MCP 连通性（workspace_info 与只读测试），全部就绪后输出完成清单。
 ```
@@ -124,13 +124,18 @@ corepack pnpm build
 npm link
 ```
 
-### 2. Configure Claude Code Skill
+### 2. Configure Claude Code Skill & Settings
 Ensure `.claude/skills/chatgpt-collab/SKILL.md` is present in your project root or `~/.claude/skills/chatgpt-collab/SKILL.md`.
+
+In your target project workspace, run `config-allow` to configure minimal required permissions and sandbox state write paths:
+```bash
+c2c config-allow -w .
+```
 
 ### 3. Initialize the Bridge
 Inside your target project workspace:
 ```bash
-c2c setup
+c2c setup -w .
 ```
 This command starts the loopback daemon, establishes a Cloudflare tunnel, and outputs:
 - **Public MCP Server URL** (e.g. `https://random-words.trycloudflare.com/mcp`)

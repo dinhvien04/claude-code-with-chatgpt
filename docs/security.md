@@ -138,3 +138,15 @@ All bridge state, client registrations, and token hashes reside in standard OS-l
 - **Linux**: `$XDG_STATE_HOME/claude-code-with-chatgpt` (or `~/.local/state/claude-code-with-chatgpt`)
 
 Directory permissions are set to `0700` and sensitive files are set to `0600`. Tokens are stored exclusively as cryptographic SHA-256 digests; raw tokens are never written to disk.
+
+---
+
+## 6. Execution Sandboxing & OS Containment Realities
+
+Claude Code provides application-level tool permission enforcement (`permissions.allow`, `permissions.ask`, `permissions.deny`) across all supported platforms. However, low-level OS process and filesystem containment differs by operating system:
+
+1. **macOS & Linux**: Native OS sandboxing is powered by Seatbelt (macOS) and Bubblewrap/namespaces (Linux). Claude Code enforces `sandbox.filesystem.allowWrite` at the kernel/process containment layer.
+2. **Native Windows**: OS-level namespace sandboxing (Bubblewrap/Seatbelt) does **not** run on native Win32. 
+   - Application-level tool permissions (e.g. `Bash(...)`, `FileRead(...)`) remain 100% enforced by the Claude Code harness.
+   - Filesystem write boundaries (`sandbox.filesystem.allowWrite`) configure Claude Code's internal execution policies.
+   - For users requiring kernel-isolated process containment on Windows machines, running Claude Code and the C2C Bridge inside **WSL2 (Windows Subsystem for Linux)** is recommended.

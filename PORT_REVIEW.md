@@ -3,9 +3,9 @@
 > **Repository**: `dinhvien04/claude-code-with-chatgpt` (Forked & Ported from `XiaoDuoYa/codex-with-chatgpt`)  
 > **Package Service**: `c2c-bridge` (CLI: `c2c`, Version: `0.1.1`)  
 > **Core Principle**: *"ChatGPT thinks. Claude Code works."*  
-> **Baseline Commit**: `07fa44a` (fix: resolve audit discrepancies and decouple Claude Code settings)  
+> **Baseline Commit**: `9559adc` (fix: permission wildcards, exclude sensitive subcommands, git exclude and case normalization)  
 > **Lead Engineer Verification Date**: 2026-09-01  
-> **Overall Port Status**: **COMPLETE & VERIFIED (ALL GATES PASS)**
+> **Overall Port Status**: **CODE QUALITY GATES: PASS | END-TO-END RUNTIME VALIDATION: PENDING**
 
 ---
 
@@ -13,22 +13,24 @@
 
 Following independent multi-agent review sweeps and security verification against the official Claude Code settings schema, the following critical improvements were implemented:
 
-1. **Elimination of Invented `writableRoots` Key**:
-   - Replaced all occurrences of the invented `writableRoots` key with the officially supported `sandbox.filesystem.allowWrite` property under the `sandbox` block.
-   - Added automatic detection and cleanup of legacy `writableRoots` properties in pre-existing settings files.
-2. **Machine-Specific Isolation via `.claude/settings.local.json`**:
-   - `c2c config-allow` writes machine-specific absolute state directories (`%LOCALAPPDATA%\claude-code-with-chatgpt`, `~/Library/Application Support/claude-code-with-chatgpt`) to `.claude/settings.local.json` rather than the shared `.claude/settings.json`, preventing machine paths from being committed to Git.
-   - Automatically ensures `.claude/settings.local.json` is added to `.gitignore`.
-3. **Fail-Closed Malformed Settings Parsing**:
-   - Implemented `readClaudeSettings` with strict error handling. If a settings file contains syntax errors or invalid non-object roots, a `MalformedSettingsError` is thrown immediately.
-   - The file on disk is preserved byte-for-byte; corrupted user settings are never overwritten with blank defaults.
-4. **Atomic Write Guarantee**:
-   - Implemented `writeClaudeSettingsAtomic` utilizing exclusive temporary files (`.tmp...`) created in the same directory with mode `0o600`, directory mode `0o700`, `fs.fsyncSync`, and atomic rename replacement (`fs.renameSync`).
-5. **Minimal Bash Permission Scoping**:
-   - Replaced broad `Bash(c2c *)` wildcards with granular per-subcommand rules (`Bash(c2c setup*)`, `Bash(c2c doctor*)`, `Bash(c2c status*)`, `Bash(c2c pair*)`, `Bash(c2c session*)`, `Bash(c2c record*)`, etc.).
-   - Explicitly excluded administrative and legacy commands (`c2c sandbox-allow`, `c2c config-allow`) from auto-approval.
-6. **Strict Idempotency & Semantics Stability**:
-   - Subsequent executions of `ensureClaudeConfigAllow` on already-configured settings files produce zero byte changes on disk and return `{ added: false, alreadyAllowed: true }`.
+1. **Token-Boundary Wildcard Permission Patterns**:
+   - Replaced adjacent wildcards (`Bash(c2c setup*)`, `Bash(node bin/c2c.js setup*)`) with proper token-boundary patterns (`Bash(c2c setup *)`, `Bash(node bin/c2c.js setup *)`).
+   - Ensures Claude Code wildcard matching accurately handles subcommands and arguments (`c2c setup`, `c2c setup -w .`, `c2c setup --json`) without overmatching adjacent binaries.
+2. **Minimization of Auto-Approved Commands**:
+   - Excluded sensitive token revocation (`c2c unpair`) and administrative setup commands (`c2c sandbox-allow`, `c2c config-allow`) from default auto-approval rules. Revoking OAuth tokens or altering configuration requires explicit user consent.
+3. **Reliable Local Settings Git Exclusion via `.git/info/exclude`**:
+   - Implemented `findGitDir()` to resolve both standard `.git` directories and Git worktrees (`gitdir: <path>` pointer files).
+   - In Git repositories and worktrees, machine-specific `.claude/settings.local.json` is appended to `.git/info/exclude`, ensuring `.gitignore` is not dirtied in shared repositories.
+   - Non-git directories safely fall back to workspace `.gitignore` creation.
+4. **Platform-Aware Path Normalization**:
+   - Implemented `isCaseInsensitive()` and `normPath()`. Deduplication of state directory paths in `sandbox.filesystem.allowWrite` uses case-insensitive comparison on Windows (`win32`) and macOS (`darwin`), while strictly preserving case differentiation on Linux/POSIX.
+5. **Accurate Native Windows Sandbox Documentation**:
+   - Explicitly documented in `docs/security.md` that OS filesystem sandboxing (Bubblewrap on Linux, Seatbelt on macOS) does not run on native Windows, while application-level tool permissions remain 100% enforced. Recommended WSL2 for kernel-level process containment.
+6. **Installation & Setup Flow Alignment**:
+   - Explicitly integrated `c2c config-allow -w .` before `c2c setup -w .` across English/Chinese one-paste setup prompts (`README.md`, `README.zh-CN.md`), manual quickstarts, and Claude Skill documentation (`SKILL.md`).
+7. **Fail-Closed & Atomic Settings Persistence**:
+   - `readClaudeSettings` throws `MalformedSettingsError` on corrupt JSON, preserving files untouched on disk.
+   - `writeClaudeSettingsAtomic` uses exclusive temporary files (`.tmp...`) with mode `0o600`, directory mode `0o700`, `fsync`, and atomic rename replacement.
 
 ---
 
@@ -73,36 +75,34 @@ The system implements a decoupled dual-plane architecture:
 {
   "permissions": {
     "allow": [
-      "Bash(c2c setup*)",
-      "Bash(c2c doctor*)",
-      "Bash(c2c start*)",
-      "Bash(c2c stop*)",
-      "Bash(c2c restart*)",
-      "Bash(c2c status*)",
-      "Bash(c2c pair*)",
-      "Bash(c2c unpair*)",
-      "Bash(c2c session*)",
-      "Bash(c2c record*)",
-      "Bash(c2c tunnel*)",
-      "Bash(c2c prefs*)",
-      "Bash(c2c logs*)",
-      "Bash(c2c workspace*)",
-      "Bash(c2c update-check*)",
-      "Bash(node bin/c2c.js setup*)",
-      "Bash(node bin/c2c.js doctor*)",
-      "Bash(node bin/c2c.js start*)",
-      "Bash(node bin/c2c.js stop*)",
-      "Bash(node bin/c2c.js restart*)",
-      "Bash(node bin/c2c.js status*)",
-      "Bash(node bin/c2c.js pair*)",
-      "Bash(node bin/c2c.js unpair*)",
-      "Bash(node bin/c2c.js session*)",
-      "Bash(node bin/c2c.js record*)",
-      "Bash(node bin/c2c.js tunnel*)",
-      "Bash(node bin/c2c.js prefs*)",
-      "Bash(node bin/c2c.js logs*)",
-      "Bash(node bin/c2c.js workspace*)",
-      "Bash(node bin/c2c.js update-check*)"
+      "Bash(c2c setup *)",
+      "Bash(c2c doctor *)",
+      "Bash(c2c start *)",
+      "Bash(c2c stop *)",
+      "Bash(c2c restart *)",
+      "Bash(c2c status *)",
+      "Bash(c2c pair *)",
+      "Bash(c2c session *)",
+      "Bash(c2c record *)",
+      "Bash(c2c tunnel *)",
+      "Bash(c2c prefs *)",
+      "Bash(c2c logs *)",
+      "Bash(c2c workspace *)",
+      "Bash(c2c update-check *)",
+      "Bash(node bin/c2c.js setup *)",
+      "Bash(node bin/c2c.js doctor *)",
+      "Bash(node bin/c2c.js start *)",
+      "Bash(node bin/c2c.js stop *)",
+      "Bash(node bin/c2c.js restart *)",
+      "Bash(node bin/c2c.js status *)",
+      "Bash(node bin/c2c.js pair *)",
+      "Bash(node bin/c2c.js session *)",
+      "Bash(node bin/c2c.js record *)",
+      "Bash(node bin/c2c.js tunnel *)",
+      "Bash(node bin/c2c.js prefs *)",
+      "Bash(node bin/c2c.js logs *)",
+      "Bash(node bin/c2c.js workspace *)",
+      "Bash(node bin/c2c.js update-check *)"
     ]
   },
   "sandbox": {
@@ -116,7 +116,7 @@ The system implements a decoupled dual-plane architecture:
 ```
 
 ### B. Settings Scopes
-- **Workspace Scope (`c2c config-allow -w .`)**: Targets `.claude/settings.local.json` (git-ignored), storing machine-specific `sandbox.filesystem.allowWrite` paths and minimal `permissions.allow` rules.
+- **Workspace Scope (`c2c config-allow -w .`)**: Targets `.claude/settings.local.json` (git-ignored via `.git/info/exclude`), storing machine-specific `sandbox.filesystem.allowWrite` paths and minimal `permissions.allow` rules.
 - **Global Scope (`c2c config-allow -g`)**: Targets `~/.claude/settings.json` (user profile).
 - **Shared Project Scope (`.claude/settings.json`)**: Contains portable repo-level build/test rules and subcommand patterns. Zero machine-specific absolute paths.
 
@@ -138,25 +138,25 @@ npm test
 
  ✓ tests/prefs.test.ts (5 tests)
  ✓ tests/workspace.test.ts (20 tests)
- ✓ tests/claude-settings.test.ts (15 tests)
  ✓ tests/search.test.ts (6 tests)
- ✓ tests/session.test.ts (14 tests)
+ ✓ tests/claude-settings.test.ts (20 tests)
  ✓ tests/tunnel.test.ts (22 tests)
  ✓ tests/execution-output.test.ts (7 tests)
- ✓ tests/sandbox-allow.test.ts (7 tests)
+ ✓ tests/session.test.ts (14 tests)
  ✓ tests/pairing.test.ts (8 tests)
+ ✓ tests/sandbox-allow.test.ts (7 tests)
  ✓ tests/port.test.ts (2 tests)
- ✓ tests/runtime.test.ts (4 tests)
+ ✓ tests/security-redteam.test.ts (24 tests)
  ✓ tests/claude-skill.test.ts (7 tests)
  ✓ tests/endpoint.test.ts (8 tests)
- ✓ tests/security-redteam.test.ts (24 tests)
+ ✓ tests/runtime.test.ts (4 tests)
  ✓ tests/oauth.test.ts (16 tests)
  ✓ tests/mcp-integration.test.ts (16 tests)
  ✓ tests/git.test.ts (14 tests)
 
  Test Files  17 passed (17)
-      Tests  195 passed (195)
-   Duration  4.64s
+      Tests  200 passed (200)
+   Duration  4.18s
 ```
 
 ### C. Build Pipeline
@@ -172,7 +172,7 @@ npm run build
 
 - [x] install succeeds
 - [x] typecheck succeeds (0 errors)
-- [x] unit tests succeed (195/195 passed)
+- [x] unit tests succeed (200/200 passed)
 - [x] integration tests succeed
 - [x] build succeeds (`dist/` clean)
 - [x] bridge starts and binds to loopback
@@ -198,57 +198,32 @@ npm run build
 - [x] manual fallback works and is fully documented
 - [x] fail-closed parsing preserves corrupted JSON files byte-for-byte
 - [x] atomic file writes prevent partial corruption
-- [x] minimal permissions exclude `c2c sandbox-allow` and `c2c config-allow`
+- [x] minimal permissions exclude `c2c sandbox-allow`, `c2c config-allow`, and `c2c unpair`
+- [x] token-boundary wildcards match subcommands and arguments cleanly
+- [x] `.git/info/exclude` preserves clean `.gitignore` in git repos and worktrees
 
 ---
 
 ## 6. Summary of Independent Multi-Agent Verification
 
-- **Final Claude Config Reviewer**: **PASSED** — Verified official Claude Code JSON schema validity (`permissions.allow`, `sandbox.filesystem.allowWrite`), confirmed complete removal of invented `writableRoots`, verified local workspace scoping via `.claude/settings.local.json`, and confirmed `.gitignore` isolation.
-- **Final Security Reviewer**: **PASSED** — Verified minimal scoped permissions (no broad wildcards, `sandbox-allow` excluded), confirmed read-only MCP invariant across all 9 tools, verified fail-closed `MalformedSettingsError`, and confirmed atomic temporary file write and replacement with mode `0o600`.
-- **Final Regression Reviewer**: **PASSED** — Verified all 17 test suites (195 tests) passing cleanly, confirmed cross-platform path handling (Windows backslashes, spaces, Unicode NFC), verified isolation from `~/.codex/config.toml`, and verified documentation alignment.
+- **Final Permission Reviewer**: **PASSED** — Confirmed all `REQUIRED_PERMISSIONS` and `.claude/settings.json` rules use token-boundary wildcard syntax `Bash(c2c <subcommand> *)` and `Bash(node bin/c2c.js <subcommand> *)`. Verified that sensitive token revocation (`c2c unpair`) and administrative setup commands (`c2c sandbox-allow`, `c2c config-allow`) are excluded from auto-approval.
+- **Final Install Reviewer**: **PASSED** — Verified consistent and accurate documentation across `README.md`, `README.zh-CN.md`, and `SKILL.md`, ensuring `c2c config-allow -w .` is explicitly executed before `c2c setup -w .`.
+- **Final Security Reviewer**: **PASSED** — Verified worktree-aware `.git/info/exclude` exclusion via `findGitDir()` and `ensureIgnoreLocalSettings()`, confirmed platform-aware path case normalization via `normPath()`, and confirmed accurate documentation of native Windows sandbox realities in `docs/security.md`.
 
 ---
 
 ## 7. Known Non-Blocking LOW Observations
 
-1. **Refresh Token Family Revocation**: Single-use refresh token rotation is enforced; full family tree revocation under RFC 6819 is slated for v0.2.0.
-2. **Legacy Codex Commands**: `c2c sandbox-allow` is preserved exclusively for legacy Codex backwards compatibility; standard Claude Code workflows use `c2c config-allow` without touching `~/.codex/config.toml`.
+1. **End-to-End Runtime Validation Status**: Automated test suite (200/200 tests across 17 files), typecheck, and build are 100% PASS; live browser pairing over Cloudflare tunnel remains PENDING user runtime execution.
+2. **Refresh Token Family Revocation**: Single-use refresh token rotation is enforced; full family tree revocation under RFC 6819 is slated for v0.2.0.
+3. **Legacy Codex Commands**: `c2c sandbox-allow` is preserved exclusively for legacy Codex backwards compatibility; standard Claude Code workflows use `c2c config-allow` without touching `~/.codex/config.toml`.
 
 ---
 
-## 8. Git Status & Summary Statistics
+## 8. Final Gate Verdict
 
-```text
-git status --short:
- M .claude/settings.json
- M PORT_REVIEW.md
- M README.md
- M README.zh-CN.md
- M docs/claude-code-port.md
- M src/cli/index.ts
- M src/config/claude-settings.ts
- M tests/claude-settings.test.ts
-
-git diff --stat:
- .claude/settings.json         |  32 +++-
- PORT_REVIEW.md                | 142 ++++++++------
- README.md                     |   2 +-
- README.zh-CN.md               |   2 +-
- docs/claude-code-port.md      |   7 +-
- src/cli/index.ts              |   2 +-
- src/config/claude-settings.ts | 273 ++++++++++++++++++++++++-----
- tests/claude-settings.test.ts | 388 +++++++++++++++++++++++++++++++++---------
- 8 files changed, 642 insertions(+), 206 deletions(-)
-```
-
----
-
-## 9. Final Gate Verdict
-
-**ALL GATES PASSED (100% COMPLETE)**
+**CODE QUALITY GATES: PASS | END-TO-END RUNTIME VALIDATION: PENDING**
 - Build Pipeline: Clean (`tsc -p tsconfig.json`)
 - Typecheck: Clean (`tsc --noEmit`, 0 errors)
-- Automated Test Suite: 195/195 tests passing across 17 test suites (100% pass rate)
+- Automated Test Suite: 200/200 tests passing across 17 test suites (100% pass rate)
 - No unauthorized git push executed.
-

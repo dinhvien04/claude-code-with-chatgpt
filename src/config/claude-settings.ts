@@ -44,7 +44,8 @@ export interface ClaudeSettings {
 
 /**
  * Normal Claude Code required permissions.
- * Explicitly excludes legacy and admin commands (e.g. `c2c sandbox-allow` and `c2c config-allow`).
+ * Explicitly excludes legacy and admin commands (e.g. `c2c sandbox-allow` and `c2c config-allow`)
+ * as well as sensitive token-revocation commands (e.g. `c2c unpair`).
  */
 export const REQUIRED_C2C_SUBCOMMANDS = [
   "setup",
@@ -54,7 +55,6 @@ export const REQUIRED_C2C_SUBCOMMANDS = [
   "restart",
   "status",
   "pair",
-  "unpair",
   "session",
   "record",
   "tunnel",
@@ -65,9 +65,19 @@ export const REQUIRED_C2C_SUBCOMMANDS = [
 ] as const;
 
 export const REQUIRED_PERMISSIONS: string[] = [
-  ...REQUIRED_C2C_SUBCOMMANDS.map((sub) => `Bash(c2c ${sub}*)`),
-  ...REQUIRED_C2C_SUBCOMMANDS.map((sub) => `Bash(node bin/c2c.js ${sub}*)`),
+  ...REQUIRED_C2C_SUBCOMMANDS.map((sub) => `Bash(c2c ${sub} *)`),
+  ...REQUIRED_C2C_SUBCOMMANDS.map((sub) => `Bash(node bin/c2c.js ${sub} *)`),
 ];
+
+export function isCaseInsensitive(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === "win32" || platform === "darwin";
+}
+
+export function normPath(p: string, platform: NodeJS.Platform = process.platform): string {
+  const normalized = p.replace(/\\/g, "/").normalize("NFC");
+  const trimmed = normalized.length > 1 && normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
+  return isCaseInsensitive(platform) ? trimmed.toLowerCase() : trimmed;
+}
 
 export class MalformedSettingsError extends Error {
   constructor(public readonly filePath: string, public readonly cause: unknown) {
@@ -176,31 +186,89 @@ export function writeClaudeSettingsAtomic(configPath: string, settings: ClaudeSe
 }
 
 /**
- * Ensure that .claude/settings.local.json is ignored in workspace .gitignore
+ * Finds the actual .git directory (resolves standard directories and worktrees with `gitdir:` pointers).
  */
-function ensureGitignoreLocalSettings(workspaceRoot: string): void {
+export function findGitDir(workspaceRoot: string): string | null {
   try {
+    const gitPath = path.join(workspaceRoot, ".git");
+    if (!fs.existsSync(gitPath)) return null;
+    const stat = fs.statSync(gitPath);
+    if (stat.isDirectory()) return gitPath;
+    if (stat.isFile()) {
+      const content = fs.readFileSync(gitPath, "utf8");
+      const match = content.match(/^gitdir:\s*(.+)$/m);
+      if (match && match[1]) {
+        const raw = match[1].trim();
+        return path.isAbsolute(raw) ? path.normalize(raw) : path.resolve(workspaceRoot, raw);
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ensures .claude/settings.local.json is properly ignored:
+ * - If workspace is a Git repository or Git worktree, appends to .git/info/exclude (preserves .gitignore cleanliness).
+ * - If not a Git repository, creates or appends to workspace .gitignore safely.
+ */
+export function ensureIgnoreLocalSettings(workspaceRoot: string): void {
+  const targetRule = ".claude/settings.local.json";
+  try {
+    const gitDir = findGitDir(workspaceRoot);
+    if (gitDir && fs.existsSync(gitDir)) {
+      const infoDir = path.join(gitDir, "info");
+      const excludePath = path.join(infoDir, "exclude");
+      fs.mkdirSync(infoDir, { recursive: true });
+
+      let content = "";
+      if (fs.existsSync(excludePath)) {
+        content = fs.readFileSync(excludePath, "utf8");
+      }
+      const lines = content.split(/\r?\n/);
+      const hasRule = lines.some((l) => {
+        const trimmed = l.trim();
+        return (
+          trimmed === targetRule ||
+          trimmed === "/.claude/settings.local.json" ||
+          trimmed === "settings.local.json" ||
+          trimmed === ".claude/*.local.json"
+        );
+      });
+      if (!hasRule) {
+        const addition = content.length === 0 || content.endsWith("\n")
+          ? `${targetRule}\n`
+          : `\n${targetRule}\n`;
+        fs.appendFileSync(excludePath, addition, "utf8");
+      }
+      return;
+    }
+
+    // Fallback for non-git workspace: ensure in workspace .gitignore
     const gitignorePath = path.join(workspaceRoot, ".gitignore");
-    if (!fs.existsSync(gitignorePath)) return;
-    const content = fs.readFileSync(gitignorePath, "utf8");
+    let content = "";
+    if (fs.existsSync(gitignorePath)) {
+      content = fs.readFileSync(gitignorePath, "utf8");
+    }
     const lines = content.split(/\r?\n/);
     const hasRule = lines.some((l) => {
       const trimmed = l.trim();
       return (
-        trimmed === ".claude/settings.local.json" ||
+        trimmed === targetRule ||
         trimmed === "/.claude/settings.local.json" ||
         trimmed === "settings.local.json" ||
         trimmed === ".claude/*.local.json"
       );
     });
     if (!hasRule) {
-      const addition = content.endsWith("\n")
-        ? ".claude/settings.local.json\n"
-        : "\n.claude/settings.local.json\n";
+      const addition = content.length === 0 || content.endsWith("\n")
+        ? `${targetRule}\n`
+        : `\n${targetRule}\n`;
       fs.appendFileSync(gitignorePath, addition, "utf8");
     }
   } catch {
-    // Best-effort workspace gitignore update
+    // Best-effort workspace ignore update
   }
 }
 
@@ -208,7 +276,7 @@ function ensureGitignoreLocalSettings(workspaceRoot: string): void {
  * Idempotently and safely configures Claude Code permissions and sandbox write access.
  * - Machine-specific absolute state directories are placed in .claude/settings.local.json (workspace)
  *   or ~/.claude/settings.json (global), keeping git-tracked files clean.
- * - Minimal permissions are granted; legacy `c2c sandbox-allow` is NEVER auto-approved.
+ * - Minimal permissions are granted; legacy `c2c sandbox-allow` and sensitive `c2c unpair` are NEVER auto-approved.
  * - Malformed settings fail closed and are never overwritten.
  * - Writes are atomic.
  */
@@ -225,7 +293,7 @@ export function ensureClaudeConfigAllow(opts?: {
   const scope: "workspace" | "global" = isGlobal || !opts?.workspaceRoot ? "global" : "workspace";
 
   if (opts?.workspaceRoot && !isGlobal && !opts?.configPath) {
-    ensureGitignoreLocalSettings(opts.workspaceRoot);
+    ensureIgnoreLocalSettings(opts.workspaceRoot);
   }
 
   // Fail-closed read
@@ -251,16 +319,16 @@ export function ensureClaudeConfigAllow(opts?: {
     }
   }
 
-  // 2. Merge sandbox.filesystem.allowWrite for the state directory
-  const normalizedStateDir = stateDir.replace(/\\/g, "/").normalize("NFC");
+  // 2. Merge sandbox.filesystem.allowWrite for the state directory using platform-aware normPath
+  const targetNormStateDir = normPath(stateDir);
+  const normalizedStateDirForWrite = stateDir.replace(/\\/g, "/").normalize("NFC");
   const nextSandboxAllowWrite = [...existingSandboxAllowWrite];
   const hasStateDir = nextSandboxAllowWrite.some(
-    (root) =>
-      root.replace(/\\/g, "/").normalize("NFC").toLowerCase() === normalizedStateDir.toLowerCase()
+    (root) => normPath(root) === targetNormStateDir
   );
 
   if (!hasStateDir) {
-    nextSandboxAllowWrite.push(normalizedStateDir);
+    nextSandboxAllowWrite.push(normalizedStateDirForWrite);
     modified = true;
   }
 

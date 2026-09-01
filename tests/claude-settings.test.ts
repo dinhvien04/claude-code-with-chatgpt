@@ -10,6 +10,10 @@ import {
   MalformedSettingsError,
   REQUIRED_PERMISSIONS,
   REQUIRED_C2C_SUBCOMMANDS,
+  findGitDir,
+  ensureIgnoreLocalSettings,
+  isCaseInsensitive,
+  normPath,
 } from "../src/config/claude-settings.js";
 import { getStateDir } from "../src/config/paths.js";
 import { PRODUCT_NAME, SERVICE_NAME, VERSION } from "../src/version.js";
@@ -46,7 +50,7 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
       expect(content.sandbox?.filesystem?.allowWrite).toBeDefined();
       expect(
         content.sandbox.filesystem.allowWrite.some(
-          (r: string) => r.toLowerCase() === stateDir.replace(/\\/g, "/").toLowerCase()
+          (r: string) => normPath(r) === normPath(stateDir)
         )
       ).toBe(true);
     });
@@ -74,7 +78,7 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
     });
   });
 
-  describe("Workspace Scoping & Machine-Specific Isolation", () => {
+  describe("Workspace Scoping & Git Exclusion Management", () => {
     it("writes machine-specific paths to settings.local.json by default for workspace scope", () => {
       const defaultLocalPath = getClaudeSettingsPath(tmpDir, false, true);
       expect(defaultLocalPath).toContain("settings.local.json");
@@ -99,6 +103,51 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
       expect(result.scope).toBe("global");
       expect(result.configPath).toBe(globalConfigPath);
       expect(fs.existsSync(globalConfigPath)).toBe(true);
+    });
+
+    it("uses .git/info/exclude in standard git repositories without dirtying .gitignore", () => {
+      const gitDir = path.join(tmpDir, ".git");
+      fs.mkdirSync(gitDir, { recursive: true });
+
+      ensureIgnoreLocalSettings(tmpDir);
+
+      const excludePath = path.join(gitDir, "info", "exclude");
+      expect(fs.existsSync(excludePath)).toBe(true);
+      const content = fs.readFileSync(excludePath, "utf8");
+      expect(content).toContain(".claude/settings.local.json");
+
+      // Verify .gitignore in root was NOT created or dirtied
+      expect(fs.existsSync(path.join(tmpDir, ".gitignore"))).toBe(false);
+    });
+
+    it("resolves git worktrees with gitdir: file pointer and updates real .git/info/exclude", () => {
+      const mainGitDir = path.join(tmpDir, "main-repo", ".git", "worktrees", "feature-wt");
+      fs.mkdirSync(mainGitDir, { recursive: true });
+
+      const worktreeDir = path.join(tmpDir, "worktree-workspace");
+      fs.mkdirSync(worktreeDir, { recursive: true });
+
+      // Create .git pointer file
+      fs.writeFileSync(path.join(worktreeDir, ".git"), `gitdir: ${mainGitDir}\n`, "utf8");
+
+      expect(findGitDir(worktreeDir)).toBe(mainGitDir);
+
+      ensureIgnoreLocalSettings(worktreeDir);
+
+      const excludePath = path.join(mainGitDir, "info", "exclude");
+      expect(fs.existsSync(excludePath)).toBe(true);
+      const content = fs.readFileSync(excludePath, "utf8");
+      expect(content).toContain(".claude/settings.local.json");
+      expect(fs.existsSync(path.join(worktreeDir, ".gitignore"))).toBe(false);
+    });
+
+    it("safely creates .gitignore in non-git directories", () => {
+      ensureIgnoreLocalSettings(tmpDir);
+
+      const gitignorePath = path.join(tmpDir, ".gitignore");
+      expect(fs.existsSync(gitignorePath)).toBe(true);
+      const content = fs.readFileSync(gitignorePath, "utf8");
+      expect(content).toContain(".claude/settings.local.json");
     });
   });
 
@@ -146,12 +195,12 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
     it("performs atomic write and sets secure permissions", () => {
       const configPath = path.join(tmpDir, ".claude", "settings.local.json");
       writeClaudeSettingsAtomic(configPath, {
-        permissions: { allow: ["Bash(c2c setup*)"] },
+        permissions: { allow: ["Bash(c2c setup *)"] },
       });
 
       expect(fs.existsSync(configPath)).toBe(true);
       const content = readClaudeSettings(configPath);
-      expect(content.permissions?.allow).toContain("Bash(c2c setup*)");
+      expect(content.permissions?.allow).toContain("Bash(c2c setup *)");
 
       // Verify no temporary files left in directory
       const files = fs.readdirSync(path.dirname(configPath));
@@ -159,8 +208,16 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
     });
   });
 
-  describe("Minimal Permission Grants & Legacy Exclusion", () => {
-    it("includes required c2c subcommands but explicitly excludes legacy sandbox-allow", () => {
+  describe("Minimal Permission Grants & Sensitive Command Exclusion", () => {
+    it("uses token-boundary wildcard syntax Bash(c2c <subcommand> *)", () => {
+      for (const perm of REQUIRED_PERMISSIONS) {
+        expect(perm).toMatch(/Bash\((c2c|node bin\/c2c\.js) [a-z0-9_-]+ \*\)/);
+        // Ensure no adjacent wildcards like "setup*" without space
+        expect(perm).not.toMatch(/Bash\((c2c|node bin\/c2c\.js) [a-z0-9_-]+\*\)/);
+      }
+    });
+
+    it("includes required c2c subcommands but explicitly excludes legacy sandbox-allow, config-allow, and unpair", () => {
       const configPath = path.join(tmpDir, ".claude", "settings.local.json");
       ensureClaudeConfigAllow({
         workspaceRoot: tmpDir,
@@ -170,17 +227,19 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
       const content = readClaudeSettings(configPath);
       const allow = content.permissions?.allow ?? [];
 
-      expect(allow).toContain("Bash(c2c setup*)");
-      expect(allow).toContain("Bash(c2c doctor*)");
-      expect(allow).toContain("Bash(c2c status*)");
-      expect(allow).toContain("Bash(c2c pair*)");
-      expect(allow).toContain("Bash(c2c session*)");
-      expect(allow).toContain("Bash(c2c record*)");
+      expect(allow).toContain("Bash(c2c setup *)");
+      expect(allow).toContain("Bash(c2c doctor *)");
+      expect(allow).toContain("Bash(c2c status *)");
+      expect(allow).toContain("Bash(c2c pair *)");
+      expect(allow).toContain("Bash(c2c session *)");
+      expect(allow).toContain("Bash(c2c record *)");
 
-      // Verify legacy command is NOT auto-approved
-      expect(allow.includes("Bash(c2c sandbox-allow)")).toBe(false);
-      expect(allow.includes("Bash(c2c sandbox-allow*)")).toBe(false);
-      expect(allow.includes("Bash(c2c *)")).toBe(false); // Broad wildcard removed in favor of explicit subcommands
+      // Verify sensitive and admin commands are NOT auto-approved
+      expect(allow.some((p) => p.includes("unpair"))).toBe(false);
+      expect(allow.some((p) => p.includes("sandbox-allow"))).toBe(false);
+      expect(allow.some((p) => p.includes("config-allow"))).toBe(false);
+      expect(allow.includes("Bash(c2c *)")).toBe(false);
+      expect(allow.includes("Bash(c2c setup*)")).toBe(false);
     });
   });
 
@@ -223,7 +282,7 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
       expect(content.permissions?.deny).toEqual(["Bash(curl * | bash)"]);
       expect(content.permissions?.allow).toContain("Bash(npm test)");
       expect(content.permissions?.allow).toContain("Bash(git status)");
-      expect(content.permissions?.allow).toContain("Bash(c2c setup*)");
+      expect(content.permissions?.allow).toContain("Bash(c2c setup *)");
 
       expect(content.sandbox?.network?.allowedDomains).toEqual(["api.anthropic.com"]);
       expect(content.sandbox?.filesystem?.allowWrite).toContain("/var/log/existing");
@@ -267,7 +326,7 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
     });
   });
 
-  describe("Cross-Platform Path Handling", () => {
+  describe("Cross-Platform Path Handling & Case Sensitivity", () => {
     it("normalizes Windows backslashes to forward slashes", () => {
       const configPath = path.join(tmpDir, ".claude", "settings.local.json");
       const winStateDir = "C:\\Users\\Developer\\AppData\\Local\\claude-code-with-chatgpt";
@@ -305,6 +364,16 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
         stateDir: unicodeStateDir,
       });
       expect(second.alreadyAllowed).toBe(true);
+    });
+
+    it("accurately reports case sensitivity rules based on platform", () => {
+      expect(isCaseInsensitive("win32")).toBe(true);
+      expect(isCaseInsensitive("darwin")).toBe(true);
+      expect(isCaseInsensitive("linux")).toBe(false);
+      expect(isCaseInsensitive("openbsd")).toBe(false);
+
+      expect(normPath("/Path/To/State", "linux")).toBe("/Path/To/State");
+      expect(normPath("/Path/To/State", "win32")).toBe("/path/to/state");
     });
   });
 

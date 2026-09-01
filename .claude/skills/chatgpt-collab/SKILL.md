@@ -36,12 +36,13 @@ The C2C Bridge gives ChatGPT read-only MCP access to the current workspace over 
 - `cloudflared` installed (`brew install cloudflared` on macOS, `winget install Cloudflare.cloudflared` on Windows, or package manager on Linux)
 - A ChatGPT Plus / Pro / Team / Enterprise account with Custom Actions / Connectors / Developer Mode enabled
 
-### Step 1: Initialize Workspace Bridge
-Run the setup command for the current workspace:
+### Step 1: Initialize Workspace Bridge & Permissions
+In your target workspace, ensure required permissions and sandbox state paths are configured, then launch the bridge:
 ```bash
+c2c config-allow -w .
 c2c setup -w .
 ```
-This starts the local C2C bridge daemon, opens the Cloudflare tunnel, and prints:
+This configures `.claude/settings.local.json` (auto-approved commands and state directory write path), starts the local C2C bridge daemon, opens the Cloudflare tunnel, and prints:
 - `mcpUrl`: The public HTTPS endpoint for ChatGPT Custom Action / Connector (e.g. `https://xxx.trycloudflare.com/mcp`).
 - `pairingCode`: An 8-character CSPRNG one-time code (valid for 5 minutes).
 - `connectorName`: The suggested connector title (e.g. `Claude Code with ChatGPT · <workspace>`).
