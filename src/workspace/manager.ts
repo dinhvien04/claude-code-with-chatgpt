@@ -171,7 +171,7 @@ export class Workspace {
     return { abs: canonical, rel };
   }
 
-  private async isBinary(abs: string): Promise<boolean> {
+  async isBinary(abs: string): Promise<boolean> {
     const fd = await fs.promises.open(abs, "r");
     try {
       const buf = Buffer.alloc(8192);

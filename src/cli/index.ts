@@ -799,9 +799,13 @@ bundleCmd
   .command("review")
   .description("Generate [C2C] STATE: EXECUTED_P bundle for implementation audit")
   .option("-w, --workspace <path>", "workspace root (defaults to current directory)")
-  .requiredOption("--task <id>", "task ID")
+  .requiredOption("--task <id>", "task ID (e.g. c2c_0123456789abcdef)")
   .requiredOption("--iteration <n>", "iteration number (e.g. 1)")
-  .option("--diff-mode <mode>", "unstaged | staged | head (default: unstaged)", "unstaged")
+  .option(
+    "--diff-mode <mode>",
+    "diff comparison mode: head | unstaged | staged (head includes all staged + unstaged changes relative to HEAD; default: head)",
+    "head"
+  )
   .option("--no-output", "exclude execution output logs")
   .option("--output-id <id>", "specific execution output ID to include")
   .option("--json", "machine-readable output", false)

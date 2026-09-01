@@ -19,7 +19,7 @@ The C2C Bridge gives ChatGPT read-only MCP access to the current workspace over 
    - **Control Plane (< 1 KB in MCP Mode)**: High-level state transitions and goals exchanged via copyable `[C2C]` blocks.
    - **Data Plane (MCP Mode)**: Code reads, directory listings, git diffs, and execution output inspected directly by ChatGPT over Model Context Protocol (MCP).
 2. **Mode-Specific Content Boundaries**:
-   - **MCP Mode (Pro/Team/Enterprise/Edu/Business)**: NEVER paste whole file contents, large git diffs, or execution logs into ChatGPT. ChatGPT reads them through the 9 read-only MCP tools.
+   - **MCP Mode (Pro/Business/Enterprise/Edu)**: NEVER paste whole file contents, large git diffs, or execution logs into ChatGPT. ChatGPT reads them through the 9 read-only MCP tools.
    - **Mode P (Plus/Free Manual Fallback)**: Generates bounded, sanitized context packages (`INIT_P`, `EXECUTED_P`) via `c2c bundle plan` / `c2c bundle review` with hard limits (total bundle <= 48 KB, tree <= 100 entries, snippets <= 200 lines/16 KB, diff <= 200 lines/24 KB). Raw whole-codebase dumps and raw secrets remain strictly prohibited.
 3. **Keep ChatGPT Read-Only**: ChatGPT never has write, execution, or mutation permissions. All changes are verified and executed by Claude Code locally.
 4. **Operation Modes**:
@@ -38,12 +38,12 @@ The C2C Bridge gives ChatGPT read-only MCP access to the current workspace over 
 - Node.js >= 20
 - For **Flow A: MCP Mode (Mode C / Mode A)**:
   - `cloudflared` installed (`brew install cloudflared` on macOS, `winget install Cloudflare.cloudflared` on Windows, or package manager on Linux)
-  - A ChatGPT Pro, Team, Enterprise, Edu, or Business account with Developer Mode / Custom Apps enabled.
+  - A ChatGPT Pro, Business, Enterprise, or Edu account with Developer Mode / Custom Apps enabled.
 - For **Flow B: Mode P (Plus / Free Manual Context Fallback)**:
   - Purely local CLI operation.
   - Zero `cloudflared`, zero tunnel creation, zero bridge daemons, zero OAuth/pairing codes, and zero `c2c setup` prerequisites.
 
-### Flow A: MCP Mode Setup (Pro / Team / Enterprise / Edu / Business)
+### Flow A: MCP Mode Setup (Pro / Business / Enterprise / Edu)
 
 #### Step 1: Initialize Workspace Bridge & Permissions
 In your target workspace, configure permissions and launch the bridge:
@@ -214,7 +214,7 @@ When using ChatGPT Plus where custom MCP connectors are unavailable (or invoked 
 2. Copy the resulting `[C2C] STATE: INIT_P` block into ChatGPT Plus.
 3. ChatGPT Plus will review the bounded context and respond with `[C2C] STATE: PLAN`.
 4. Claude Code executes the changes locally.
-5. Generate the review package:
+5. Generate the complete review package (automatically includes staged, unstaged, and safe untracked files):
    ```bash
    c2c bundle review -w . --task <task_id> --iteration 1
    ```

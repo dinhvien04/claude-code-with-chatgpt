@@ -3,53 +3,69 @@
 > **Repository**: `dinhvien04/claude-code-with-chatgpt` (Forked & Ported from `XiaoDuoYa/codex-with-chatgpt`)  
 > **Package Service**: `c2c-bridge` (CLI: `c2c`, Version: `0.1.1`)  
 > **Core Principle**: *"ChatGPT thinks. Claude Code works."*  
-> **Baseline Commit**: `abf779949bfcaf5148042c7a35b330fedb37c4fc`  
+> **Baseline Commit**: `4860d4908b8ffe40b759033594257edc3667de45`  
 > **Lead Engineer Verification Date**: 2026-09-02  
 > **Overall Port Status**: **CODE QUALITY GATES: PASS | END-TO-END RUNTIME VALIDATION: PENDING**
 
 ---
 
-## 1. Corrective Pass Summary (Post-Audit Hardening)
+## 1. Corrective Pass Summary (Review Completeness & Security Hardening)
 
 Following independent multi-agent review sweeps and security verification against the official Claude Code settings schema and OpenAI subscription tiers, the following critical improvements were implemented:
 
-1. **Deterministic Local Mode P Bundle Generator (`c2c bundle plan` & `c2c bundle review`)**:
-   - Built a 100% local CLI tool generating bounded, sanitized context packages (`INIT_P` and `EXECUTED_P`).
-   - Hard limits strictly enforced: total bundle <= 48 KB, directory tree <= 100 entries (depth <= 3), source snippets <= 200 lines / 16 KB (for up to 3 files), git diff <= 200 lines / 24 KB, execution output <= 150 lines / 12 KB.
-   - Comprehensive security reuse: canonical path traversal protection (`Workspace.resolve`), sensitive file filtering (`IgnoreRules` blocking `.env*`, `*.pem`, `*.key`, `id_rsa*`, `.git/**`, `.npmrc`), and credential redaction (`sanitizeExecutionOutput` scrubbing OpenAI, Anthropic, GCP, AWS tokens, and home directory paths).
-2. **100% Local Mode P Execution**:
-   - Zero `cloudflared`, zero tunnel creation, zero bridge daemons, zero OAuth/pairing codes, and zero `c2c setup` prerequisites required for Mode P.
-3. **Split Installation & Setup Flows**:
-   - Explicitly separated documentation and user onboarding into **Flow A: MCP Mode** (for ChatGPT Pro / Team / Enterprise / Edu / Business with Developer Mode) and **Flow B: Mode P** (for ChatGPT Plus / Free without MCP).
-4. **Immediate Mode P Bypass in Claude Skill**:
-   - Updated `.claude/skills/chatgpt-collab/SKILL.md` so `/chatgpt-collab --mode-p <goal>` immediately bypasses `c2c doctor`, `c2c setup`, and tunnel checks.
-5. **Mode-Specific Security Rules Clarification**:
-   - Clarified that "Never paste big content" applies to MCP Mode (< 1 KB control plane), while Mode P explicitly permits pasting bounded, sanitized context bundles while strictly forbidding raw whole-codebase dumps and raw secrets.
-6. **Conservative OpenAI Tier Documentation**:
-   - Accurately documented that custom MCP server connectors in Developer Mode are available for Pro, Team, Enterprise, Edu, and Business plans, while ChatGPT Plus ($20/mo) and Free plans use Mode P.
-7. **Removal of Fragile Settings Hash URLs**:
-   - Removed client-side hash routes (`https://chatgpt.com/#settings/Apps`) in `endpoint.ts` and `browser-agent.mjs`, standardizing on UI navigation (`Settings -> Apps -> Advanced Settings / Developer Mode`).
-8. **RFC 6819 Section 5.2.2.3 Token Family Tracking & Replay Protection**:
-   - Implemented `familyId`, generation counters, and persisted tombstones (`status: "used"`).
-   - Presentation of an already-consumed refresh token triggers immediate detection of a replay attack, revoking all active access and refresh tokens across the entire family lineage.
-9. **Fail-Closed Git-Ignore Handling**:
-   - Configured `ensureIgnoreLocalSettings` to fail closed and throw `GitExcludeError` if Git exclude setup fails in a Git repository, preventing `.claude/settings.local.json` from ever being created without exclusion.
-   - Handled non-Git directories cleanly with `.gitignore` fallback.
-10. **Permission Allowlist Alignment**:
-    - Added `"bundle"` to `REQUIRED_C2C_SUBCOMMANDS` so Claude Code CLI can execute `c2c bundle plan` and `c2c bundle review` without permission prompts.
+1. **Complete Review Changeset & Non-Mutating Untracked Diff Generator (`src/bundle/untracked.ts`)**:
+   - `c2c bundle review` defaults to `--diff-mode head`, capturing all staged, unstaged, modified, deleted, and renamed tracked changes relative to HEAD (or Git's canonical empty tree `4b825dc642cb6eb9a060e54bf8d69288fbee4904` for unborn repos).
+   - In-memory synthesized unified diff blocks (`new file mode 100644`) for safe untracked files without modifying Git index or repository state (zero `git add`, zero `git stage`, zero `git stash`, zero `git reset`).
+   - Confines and scopes path resolution in workspace subdirectories inside larger repositories using `:(top,literal)` pathspecs and scoped git enumeration.
+2. **Multi-Layer Sensitive Untracked File Gate**:
+   - Strictly blocks `.env*`, `credentials.json`, `*.pem`, `*.key`, `id_rsa*`, `.git/*`, `.npmrc`, and service account tokens across `Workspace.resolve()`, `IgnoreRules.isSensitive()`, `gitStatus()`, `gitDiff()`, and `buildUntrackedFileDiffs()`.
+   - Binary untracked files are detected via `workspace.isBinary()` and rendered as binary diff notices without leaking contents.
+3. **15-Case Git Review Test Matrix (Cases A through O)**:
+   - Comprehensive test suite in `tests/bundle.test.ts` covering:
+     - Case A: unstaged tracked modification
+     - Case B: staged tracked modification
+     - Case C: mixed staged + unstaged tracked modifications
+     - Cases D & E: one and multiple new untracked text files
+     - Case F: untracked binary files
+     - Case G: sensitive untracked files (.env, credentials, keys, id_rsa)
+     - Case H: deleted tracked files
+     - Case I: renamed tracked files with cross-boundary secret protection
+     - Case J: staged new files
+     - Case K: unborn repository with zero commits
+     - Case L: clean repository (empty diff)
+     - Case M: paths containing spaces
+     - Case N: Unicode filenames and content (Vietnamese, Chinese, Emoji)
+     - Case O: target workspace is a subdirectory inside a larger Git repository
+4. **Metadata & Protocol Sanitization**:
+   - Protocol header injection defense: `validateTaskId` enforces `^c2c_[a-zA-Z0-9_-]{1,64}$`, rejecting whitespace, newlines, carriage returns, and control characters.
+   - `generateTaskId()` generates 64-bit entropy using CSPRNG (`crypto.randomBytes(8).toString("hex")`).
+   - `opts.goal`, `latestRecord.tests`, and `command` strings are sanitized via `sanitizeExecutionOutput` and forged `[C2C]` headers are escaped to `[_C2C_]`.
+   - `latestRecord.changedFiles` filters out sensitive paths.
+5. **Hard UTF-8 Byte Budget Truncation (`truncateUtf8ToBytes`)**:
+   - Strictly guarantees `Buffer.byteLength(bundle.text, "utf8") <= maxTotalBytes` by pre-allocating truncation notice byte length.
+   - Scans trailing byte bit-patterns (`0b10xxxxxx` continuation bytes and leading byte lengths) to ensure truncation strictly at character boundaries, preventing unicode replacement corruption (`�`).
+6. **Truthful Documentation & Accurate Plan Names**:
+   - Deprecated "ChatGPT Team" updated to "ChatGPT Business" across all documentation and skills (reflecting OpenAI's August 29, 2025 naming update).
+   - Accurately differentiated ChatGPT Pro, Business, Enterprise, and Edu (MCP Mode, subject to admin/developer mode policies) from Plus and Free (Mode P, 100% local).
+   - Truthfully qualified security claims (*"reduces secret-exposure risk through sensitive-file blocking, path containment, and deterministic known-secret redaction"*).
+   - Split One-Paste Install into **Flow A: MCP Mode** and **Flow B: Mode P (100% Local)**.
+7. **RFC 6819 Section 5.2.2.3 Token Family Tracking & Replay Protection**:
+   - `AuthStore` in `src/auth/store.ts` tracks token family lineage (`familyId`, generation counters, tombstones `status: "used"`), triggering immediate cascade revocation upon replay detection.
+8. **Fail-Closed Git-Ignore Handling**:
+   - `ensureIgnoreLocalSettings` throws `GitExcludeError` if `.git/info/exclude` cannot be written, preventing unignored settings creation.
 
 ---
 
 ## 2. Final Architecture Summary
 
 The system implements a decoupled dual-plane architecture:
-- **Reasoning / Review Plane (ChatGPT Web / Pro / Team / Enterprise / Edu / Plus)**: Operates within the official ChatGPT web interface to perform high-level planning, architectural reasoning, and code review without context window exhaustion.
+- **Reasoning / Review Plane (ChatGPT Web / Pro / Business / Enterprise / Edu / Plus / Free)**: Operates within the official ChatGPT web interface to perform high-level planning, architectural reasoning, and code review without context window exhaustion.
 - **Data Plane (C2C Bridge & Read-Only MCP)**: An Express HTTP daemon over Cloudflare Tunnel (Quick or Named) exposing exactly 9 read-only Model Context Protocol (MCP) tools secured by RFC 7591 Dynamic Client Registration, PKCE S256, RFC 6819 token family tracking, and 8-character CSPRNG pairing codes.
 - **Execution Harness Plane (Claude Code CLI)**: Performs local file editing, terminal execution, compilation, testing, and git operations. The backend model is completely provider-neutral (Anthropic Claude, 9Router, Google Gemini, Amazon Bedrock, or custom local gateways).
 - **Control Plane**: Standardized on **Mode C (Guided Manual Handoff)** as the 100% reliable default across all platforms for MCP-enabled plans, **Mode P** for Plus/Free 100% local manual handoff, and optional **Mode A** automated script support.
 
 ```
-              ChatGPT Web (Pro / Team / Ent / Edu / Plus)
+              ChatGPT Web (Pro / Business / Ent / Edu / Plus)
                  PLAN / REASON / REVIEW
                          |
                          |
@@ -58,6 +74,19 @@ The system implements a decoupled dual-plane architecture:
                          |
                          v
                     C2C Bridge
+                   (127.0.0.1)
+                         |
+                         v
+                  Local Workspace
+                         ^
+                         |
+             edit / shell / git / tests
+                         |
+                    Claude Code
+                         |
+                  model gateway
+             (9Router / Gemini / others)
+```
                    (127.0.0.1)
                          |
                          v
@@ -123,30 +152,30 @@ npm run typecheck
 npm test
 > vitest run
 
- ✓ tests/token-family.test.ts (5 tests)
- ✓ tests/workspace.test.ts (20 tests)
  ✓ tests/git-ignore-failclosed.test.ts (3 tests)
  ✓ tests/search.test.ts (6 tests)
- ✓ tests/bundle.test.ts (9 tests)
- ✓ tests/prefs.test.ts (5 tests)
- ✓ tests/claude-settings.test.ts (20 tests)
  ✓ tests/tunnel.test.ts (22 tests)
+ ✓ tests/token-family.test.ts (5 tests)
+ ✓ tests/port.test.ts (2 tests)
  ✓ tests/runtime.test.ts (4 tests)
  ✓ tests/security-redteam.test.ts (24 tests)
- ✓ tests/execution-output.test.ts (7 tests)
+ ✓ tests/workspace.test.ts (20 tests)
+ ✓ tests/prefs.test.ts (5 tests)
  ✓ tests/oauth.test.ts (16 tests)
+ ✓ tests/execution-output.test.ts (7 tests)
  ✓ tests/session.test.ts (14 tests)
+ ✓ tests/claude-skill.test.ts (7 tests)
+ ✓ tests/claude-settings.test.ts (20 tests)
  ✓ tests/sandbox-allow.test.ts (7 tests)
  ✓ tests/pairing.test.ts (8 tests)
- ✓ tests/claude-skill.test.ts (7 tests)
- ✓ tests/port.test.ts (2 tests)
  ✓ tests/endpoint.test.ts (8 tests)
  ✓ tests/mcp-integration.test.ts (16 tests)
  ✓ tests/git.test.ts (14 tests)
+ ✓ tests/bundle.test.ts (27 tests)
 
  Test Files  20 passed (20)
-      Tests  217 passed (217)
-   Duration  10.37s
+      Tests  235 passed (235)
+   Duration  8.32s
 ```
 
 ### C. Build Pipeline
@@ -162,7 +191,7 @@ npm run build
 
 - [x] install succeeds
 - [x] typecheck succeeds (0 errors)
-- [x] unit tests succeed (217/217 passed across 20 test files)
+- [x] unit tests succeed (235/235 passed across 20 test files)
 - [x] integration tests succeed
 - [x] build succeeds (`dist/` clean)
 - [x] bridge starts and binds to loopback
@@ -194,20 +223,24 @@ npm run build
 - [x] `ensureIgnoreLocalSettings` fails closed on Git exclude failure
 - [x] RFC 6819 token family rotation and replay attack revocation cascade implemented and verified
 - [x] `darwin` treated as case-sensitive by default in `isCaseInsensitive`
+- [x] non-mutating review changeset capture covers staged, unstaged, and safe untracked files
+- [x] multi-layer sensitive untracked file gate protects secrets across diffs and status
+- [x] protocol headers, task ID regex, and metadata sanitization defense verified
+- [x] exact hard UTF-8 safe byte boundary truncation guaranteed
 
 ---
 
 ## 6. Summary of Independent Multi-Agent Verification
 
-- **Final Mode P Security & Implementation Reviewer**: **PASSED** — Verified `src/bundle/` implementation (`types.ts`, `tree.ts`, `snippets.ts`, `builder.ts`, `index.ts`), CLI commands `c2c bundle plan` and `c2c bundle review`, and regression suite `tests/bundle.test.ts`. Confirmed Mode P enforces all hierarchical budget limits (48 KB total, 100 tree entries/depth 3, 200 lines/16 KB snippets for <= 3 files, 200 lines/24 KB diffs, 150 lines/12 KB execution logs) and reuses `Workspace.readFile`, `IgnoreRules`, and `sanitizeExecutionOutput` with zero tunnel or daemon dependencies.
-- **Final RFC 6819 Auth & Settings Reviewer**: **PASSED** — Verified `AuthStore` in `src/auth/store.ts` implements RFC 6819 Section 5.2.2.3 token family tracking with `familyId`, generation counters, tombstones (`status: "used"`), and cascade family revocation on replay detection. Verified fail-closed Git exclude handling via `GitExcludeError` in `claude-settings.ts` and inclusion of `"bundle"` in `REQUIRED_C2C_SUBCOMMANDS`.
-- **Final Docs & Runtime Protocol Reviewer**: **PASSED** — Verified clean split between Flow A (MCP Mode for Pro/Team/Enterprise/Edu/Business) and Flow B (Mode P for Plus/Free), immediate Mode P bypass in `SKILL.md`, removal of obsolete hash URLs (`#settings/Apps`), and accurate mode-specific security guidelines.
+- **Final Review Completeness Auditor**: **PASSED** — Inspected `src/bundle/builder.ts`, `src/bundle/untracked.ts`, `src/workspace/git.ts`, and `tests/bundle.test.ts`. Verified `c2c bundle review` defaults to `head` mode and synthesizes unified diffs for safe untracked files without mutating Git state (no `git add`, no staging, no reset). Confirmed complete handling across Git matrix (Cases A through O, unborn repos, deletions, renames, and subdirectories).
+- **Final Bundle Security Auditor**: **PASSED** — Verified multi-layer sensitive file blocking (`.env*`, `credentials.json`, `*.pem`, `*.key`, `id_rsa*`, `.git/*`), metadata and command sanitization, fake `[C2C]` header escaping to `[_C2C_]`, 64-bit CSPRNG task ID generation with regex validation, and hard UTF-8 byte boundary truncation without multibyte splitting.
+- **Final Mode P Docs & Runtime Auditor**: **PASSED** — Verified truthful plan name updates (zero "ChatGPT Team" references; updated to "ChatGPT Business" per August 29, 2025 naming update), qualified security claims, clean split of One-Paste Install into Flow A (MCP Mode) vs Flow B (Mode P, 100% local), and Mode P runtime UX in `SKILL.md`.
 
 ---
 
 ## 7. Known Non-Blocking LOW Observations
 
-1. **End-to-End Runtime Validation Status**: Automated test suite (217/217 tests across 20 files), typecheck, and build are 100% PASS; live browser pairing over Cloudflare tunnel remains PENDING user runtime execution.
+1. **End-to-End Runtime Validation Status**: Automated test suite (235/235 tests across 20 files), typecheck, and build are 100% PASS; live browser pairing over Cloudflare tunnel remains PENDING user runtime execution.
 2. **Legacy Codex Commands**: `c2c sandbox-allow` is preserved exclusively for legacy Codex backwards compatibility; standard Claude Code workflows use `c2c config-allow` without touching `~/.codex/config.toml`.
 
 ---
@@ -217,7 +250,9 @@ npm run build
 **CODE QUALITY GATES: PASS | END-TO-END RUNTIME VALIDATION: PENDING**
 - Build Pipeline: Clean (`tsc -p tsconfig.json`)
 - Typecheck: Clean (`tsc --noEmit`, 0 errors)
-- Automated Test Suite: 217/217 tests passing across 20 test suites (100% pass rate)
+- Automated Test Suite: 235/235 tests passing across 20 test suites (100% pass rate)
+- All security, review completeness, and architectural invariants strictly enforced.
+- **No push executed** (per instructions).
 - All security and architectural invariants strictly enforced.
 - **No push executed** (per instructions).
 

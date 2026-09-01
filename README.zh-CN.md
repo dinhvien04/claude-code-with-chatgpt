@@ -13,9 +13,9 @@
 
 ## 解决什么问题
 
-ChatGPT Pro、Team、Enterprise 与 Edu 订阅包含强大推理规划能力与自定义 MCP 开发者连接器，而本地编码 Agent 却在消耗昂贵且紧张的 API 额度进行繁琐的架构规划与代码审查。
+ChatGPT Pro、Business、Enterprise 与 Edu 订阅包含强大推理规划能力与自定义 MCP 开发者连接器（在 Business/Enterprise/Edu 上受管理员权限控制，在 Pro 上受开发者模式支持），而本地编码 Agent 却在消耗昂贵且紧张的 API 额度进行繁琐的架构规划与代码审查。
 
-本项目把“高阶推理与规划审查”交给网页版 ChatGPT，Claude Code CLI 负责本地代码编辑、测试执行与 Git 维护。针对 OpenAI 尚未支持自定义 MCP 连接器的 ChatGPT Plus 用户，系统提供了专用的手动上下文交付模式（**Mode P**）。
+本项目把“高阶推理与规划审查”交给网页版 ChatGPT，Claude Code CLI 负责本地代码编辑、测试执行与 Git 维护。针对 OpenAI 尚未支持自定义 MCP 连接器的 ChatGPT Plus 与 Free 用户，系统提供了专用的手动上下文交付模式（**Mode P**）。
 
 ---
 
@@ -23,8 +23,8 @@ ChatGPT Pro、Team、Enterprise 与 Edu 订阅包含强大推理规划能力与�
 
 将 ChatGPT 网页版转变为 Claude Code 编码会话的“规划与审查大脑”，而本地执行权完全保留在 Claude Code 手中。
 
-- **针对 ChatGPT Pro / Team / Enterprise / Edu（只读 MCP 模式）**：代码不全量上传，ChatGPT 仅通过 OAuth 2.1 保护的**只读 MCP 连接**，按需调取所需的文件片段与 Diff。
-- **针对 ChatGPT Plus / Free（Mode P — 手动上下文交付模式）**：Claude Code 生成严格受限、脱敏且经过安全过滤的上下文/审查数据包，直接复制到 ChatGPT Plus 中使用。
+- **针对 ChatGPT Pro / Business / Enterprise / Edu（只读 MCP 模式）**：代码不全量上传，ChatGPT 仅通过 OAuth 2.1 保护的**只读 MCP 连接**，按需调取所需的文件片段与 Diff（视订阅类型与企业管理员策略而定）。
+- **针对 ChatGPT Plus / Free（Mode P — 手动上下文交付模式）**：Claude Code 生成严格受限、脱敏且经过安全过滤的上下文/审查数据包，直接复制到 ChatGPT Plus 中使用（通过敏感文件拦截、路径收敛与确定性已知密钥脱敏降低泄密风险）。
 - **无感后端支持**：Claude Code 作为本地执行引擎，可透明兼容官方 Anthropic、9Router、Google Gemini、Bedrock 或各类自建 API 代理网关。
 
 ---
@@ -78,19 +78,28 @@ ChatGPT Pro、Team、Enterprise 与 Edu 订阅包含强大推理规划能力与�
 
 ## 一段话安装（给 Claude Code CLI）
 
-把下面这段话复制给 Claude Code：
+请根据您的 ChatGPT 订阅类型选择对应的提示词：
 
+### 方案 A：MCP 模式（ChatGPT Pro / Business / Enterprise / Edu）
 ```text
-请帮我完整安装并配置 claude-code-with-chatgpt：
+请帮我完整安装并配置 claude-code-with-chatgpt（MCP 模式）：
 
 1. 环境自检：检查 git 与 Node.js ≥ 20，并确保已安装 cloudflared（macOS 用 brew，Windows 用 winget）。
-2. 下载与构建：克隆仓库到 ~/claude-code-with-chatgpt（git clone https://github.com/dinhvien04/claude-code-with-chatgpt.git，已存在则 git pull），执行 corepack pnpm install && corepack pnpm build。
-3. 配置 Skill 与权限：将 .claude/skills/chatgpt-collab 放置到工作区或 ~/.claude/skills/chatgpt-collab，并在目标工作区执行 `c2c config-allow -w .` 将所需工具权限与沙箱状态写入路径自动配置到 .claude/settings.local.json。
+2. 下载与构建：克隆仓库到 ~/claude-code-with-chatgpt（已存在则 git pull），执行 corepack pnpm install && corepack pnpm build。
+3. 配置 Skill 与权限：将 .claude/skills/chatgpt-collab 放置到工作区或 ~/.claude/skills/chatgpt-collab，并在目标工作区执行 `c2c config-allow -w .`。
 4. 启动服务：执行 c2c setup -w . 启动本地桥接守护进程与隧道，获取公网 MCP 地址及一次性配对码。
-5. 引导配对流程：
-   - 针对 ChatGPT Pro / Team / Enterprise / Edu：在 ChatGPT 网页版进入 设置 -> Apps / 已连接应用（或开发者模式），添加自定义应用并填入 MCP 地址。
-   - 针对 ChatGPT Plus / Free 用户：指引使用 Mode P（Plus 手动上下文交付模式）。
-6. 验证连通性或手动交付准备，全部就绪后输出完成清单。
+5. 引导配对流程：在 ChatGPT 网页版进入 设置 -> Apps / 已连接应用（或开发者模式），添加自定义应用并填入 MCP 地址与配对码。
+6. 验证连通性，全部就绪后输出完成清单。
+```
+
+### 方案 B：Mode P 模式（ChatGPT Plus / Free — 纯本地，无需 cloudflared 与后台守护进程）
+```text
+请帮我配置 claude-code-with-chatgpt 的 Mode P（手动上下文交付模式）：
+
+1. 环境自检：检查 git 与 Node.js ≥ 20（无需安装 cloudflared，无需任何内网穿透）。
+2. 下载与构建：克隆仓库到 ~/claude-code-with-chatgpt（已存在则 git pull），执行 corepack pnpm install && corepack pnpm build。
+3. 配置 Skill 与权限：将 .claude/skills/chatgpt-collab 放置到工作区或 ~/.claude/skills/chatgpt-collab，并在目标工作区执行 `c2c config-allow -w .`。
+4. 验证 Mode P 准备就绪（可通过 `c2c bundle plan` 与 `/chatgpt-collab --mode-p 需求描述` 直接生成数据包），无需启动后台守护进程。
 ```
 
 ---
@@ -131,8 +140,9 @@ c2c setup -w .
 
 ### 4. 在 ChatGPT 网页版连接与操作
 
-#### 选项 A：ChatGPT Pro / Team / Enterprise / Edu / Business（MCP 模式）
+#### 选项 A：ChatGPT Pro / Business / Enterprise / Edu（MCP 模式）
 1. 打开 ChatGPT 网页版 -> **设置** -> **Apps** -> **高级设置**（或 **开发者模式**）。
+   *(说明：Business、Enterprise 与 Edu 账户上的自定义 MCP 连接器受企业管理员权限策略控制；Pro 账户受开发者模式可用性支持)*。
 2. 点击 **添加自定义应用 / 连接器**：
    - **名称**：填入 `c2c setup` 显示的连接器名称（如 `Claude Code with ChatGPT`）
    - **服务器 URL**：填入 `c2c setup` 给出的公网 MCP 地址（`https://...trycloudflare.com/mcp`）
@@ -141,7 +151,7 @@ c2c setup -w .
 4. 在 ChatGPT 中开启新会话，发送 **Boot Prompt**（见 `docs/protocol.md` 或通过 Claude Code 生成），并在需要执行 MCP 工具调用时确保选择或 `@mention` 该应用。
 
 #### 选项 B：ChatGPT Plus / Free（Mode P — 纯本地手动上下文交付模式）
-*说明：OpenAI 当前仅面向 Pro、Team、Enterprise、Edu 与 Business 订阅开放自定义 MCP 连接器。Plus 与 Free 用户无需配置隧道与守护进程，直接在本地生成上下文包即可：*
+*说明：OpenAI 当前仅面向 Pro、Business、Enterprise 与 Edu 订阅开放自定义 MCP 连接器。Plus 与 Free 用户无需配置隧道与守护进程，直接在本地生成上下文包即可：*
 1. Mode P **完全运行在本地，无需 cloudflared、无需隧道、无需后台常驻守护进程、无需 OAuth 配对**。
 2. 在 Claude Code CLI 中直接输入：`/chatgpt-collab --mode-p 需求描述` 或直接运行生成命令：
    ```bash
@@ -149,7 +159,7 @@ c2c setup -w .
    ```
 3. 将生成的结构化 `[C2C] STATE: INIT_P` 数据包粘贴至 ChatGPT Plus，ChatGPT 将返回规划 `[C2C] STATE: PLAN`。
 4. 在 Claude Code 中执行代码修改与测试。
-5. 生成审查数据包：
+5. 生成完整审查数据包（默认采用 `head` 模式涵盖暂存、未暂存及安全的新建文件）：
    ```bash
    c2c bundle review -w . --task <task_id> --iteration 1
    ```
