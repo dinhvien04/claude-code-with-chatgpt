@@ -1,6 +1,6 @@
 import express, { type Request, type Response, type NextFunction } from "express";
 import type { Server } from "node:http";
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { Workspace } from "../workspace/manager.js";
 import { AuthStore } from "../auth/store.js";
 import { createOAuthRouter } from "../auth/oauth.js";
@@ -95,7 +95,7 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
   let publicBaseUrl: string | null = null;
 
   const app = express();
-  app.set("trust proxy", true);
+  app.set("trust proxy", "loopback");
   app.disable("x-powered-by");
 
   const getBaseUrl = (req: Request): string => {
@@ -144,7 +144,14 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
     const viaProxy = Boolean(req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"]);
     const header = req.headers.authorization ?? "";
     const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
-    if (!isLoopback || viaProxy || token !== adminToken) {
+
+    const adminTokenBuf = Buffer.from(adminToken, "utf8");
+    const tokenBuf = Buffer.from(token, "utf8");
+    const isTokenValid =
+      tokenBuf.length === adminTokenBuf.length &&
+      timingSafeEqual(tokenBuf, adminTokenBuf);
+
+    if (!isLoopback || viaProxy || !isTokenValid) {
       res.status(404).end(); // do not advertise the admin surface
       return;
     }

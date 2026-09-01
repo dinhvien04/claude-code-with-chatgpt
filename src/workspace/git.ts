@@ -133,10 +133,23 @@ export interface WorkspaceLike {
 
 export type GitTarget = string | WorkspaceLike;
 
-function getDiffModeArgs(mode: DiffMode): string[] {
-  if (mode === "staged") return ["--cached"];
-  if (mode === "head") return ["HEAD"];
-  return [];
+const EMPTY_TREE_HASH = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+function getDiffModeArgs(root: string, mode: DiffMode): { modeArgs: string[]; isRepo: boolean } {
+  if (mode === "staged") return { modeArgs: ["--cached"], isRepo: true };
+  if (mode === "head") {
+    const headCheck = runGit(root, ["rev-parse", "--verify", "HEAD"]);
+    if (headCheck.ok) {
+      return { modeArgs: ["HEAD"], isRepo: true };
+    }
+    // Unborn repository (0 commits): verify repository status and diff against empty tree
+    const repoCheck = runGit(root, ["rev-parse", "--is-inside-work-tree"]);
+    if (repoCheck.ok && repoCheck.stdout.trim() === "true") {
+      return { modeArgs: [EMPTY_TREE_HASH], isRepo: true };
+    }
+    return { modeArgs: ["HEAD"], isRepo: false };
+  }
+  return { modeArgs: [], isRepo: true };
 }
 
 function chunkSafePaths(paths: string[], maxCount = 50, maxBytes = 32 * 1024): string[][] {
@@ -182,7 +195,19 @@ export function gitDiff(
   const mode = opts.mode ?? "unstaged";
   const offset = Math.max(0, Math.floor(opts.offset ?? 0));
   const maxBytes = Math.min(256 * 1024, Math.max(1024, Math.floor(opts.maxBytes ?? 64 * 1024)));
-  const modeArgs = getDiffModeArgs(mode);
+  const { modeArgs, isRepo } = getDiffModeArgs(root, mode);
+  if (!isRepo) {
+    return {
+      isRepo: false,
+      mode,
+      totalBytes: 0,
+      offset: 0,
+      returnedBytes: 0,
+      hasMore: false,
+      nextOffset: null,
+      diff: "",
+    };
+  }
 
   // 1. Full-workspace inventory using NUL separation and global rename detection
   const listArgs = [

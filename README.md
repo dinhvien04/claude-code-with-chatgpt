@@ -1,244 +1,216 @@
-# Codex with ChatGPT
+# Claude Code with ChatGPT
 
-> ChatGPT thinks. Codex works.
-> ChatGPT 负责思考，Codex 负责干活。
+> ChatGPT thinks. Claude Code works.  
+> ChatGPT 负责思考，Claude Code 负责干活。
 
 > [!IMPORTANT]
-> **遇到问题？** 请先向 Codex 发送 **「更新 Codex with ChatGPT」** 并重试。更新到最新版本可以解决大多数已知问题。  
-> **Having trouble?** First ask Codex to **“Update Codex with ChatGPT”** and try again. Updating to the latest version resolves most known issues.
-
-## The problem · 解决什么问题
-
-**中文** — ChatGPT 付费订阅的网页版额度大量闲置，Codex 却在消耗紧张的
-API 额度做规划和 Review。本项目把"思考"交给你已付费的网页版 ChatGPT，
-Codex 只负责执行。不用 API Key、不搞逆向代理——官方网页 + 只读 MCP 桥接。
-
-**EN** — ChatGPT Plus/Pro web quota sits idle while your coding agent burns
-scarce API/Codex tokens on planning and review. This project moves the
-thinking to the subscription you already pay for; Codex only executes.
-No API keys, no reverse proxy — official web UI plus a read-only MCP bridge.
-
-## What it is · 这是什么
-
-**中文** — 把 ChatGPT 网页版变成 Codex 编码会话的"规划与审查大脑"，执行权
-完全保留在 Codex 手里。你的仓库永远不会被上传：ChatGPT 通过一条安全的、
-OAuth 保护的**只读** MCP 连接，按需读取当前工作区里它真正需要的那几行代码。
-
-**EN** — Use the ChatGPT web app as the planning and review brain for your
-Codex coding sessions, while Codex keeps full ownership of execution. Your
-repository is never uploaded: ChatGPT reads exactly the lines it needs through
-a secure, OAuth-protected, **read-only** MCP connection to your current
-workspace.
-
-Detailed docs below are in English · 详细中文文档见 **[README.zh-CN.md](README.zh-CN.md)**
-
-## One-paste install · 一段话安装
-
-**中文** — 不懂 git、Node、终端？完全不需要懂。把下面这段话原样复制给你的
-编码 Agent（Codex），然后去倒杯咖啡：
-
-```text
-请帮我完整安装并配置 Codex with ChatGPT，全程自动，我是不懂技术的小白，
-所有事情你自己做：
-
-1. 环境自检：需要 git 和 Node.js ≥ 20，缺什么就自动安装
-  （macOS 用 Homebrew，Windows 用 winget），同时安装 cloudflared。
-2. 下载：把 https://github.com/XiaoDuoYa/codex-with-chatgpt 克隆到
-   ~/codex-with-chatgpt（已存在就 git pull 更新）。
-3. 构建：在该目录里执行 corepack pnpm install 和 corepack pnpm build。
-4. 安装 Skill：把仓库里的 skill/SKILL.md 复制到
-   ~/.codex/skills/codex-with-chatgpt/SKILL.md，并把文件中
-   "The codex-with-chatgpt checkout lives at:" 那一行的路径改成实际克隆路径。
-5. 首次配置：按 SKILL.md 里的 first-time setup 流程执行
-  （运行 c2c setup，用内置浏览器打开 ChatGPT 配置连接器并输入配对码）。
-   全程只用内置浏览器，禁止打开任何第三方浏览器。
-6. 只有遇到需要我登录（ChatGPT / Cloudflare）、验证码或两步验证时才叫我，
-   而且一次只告诉我一个动作。
-7. 完成后给我看 ✓ 清单，并确认文件读取测试通过。我不懂 MCP、OAuth、
-   Tunnel、端口这些词，不要向我解释；出了问题先自己修。
-```
-
-
-**EN** — Don't know git, Node, or terminals? You don't need to. Copy the
-paragraph below, paste it to your coding agent (Codex), and go grab a coffee:
-
-```text
-Please install and configure "Codex with ChatGPT" for me, fully automatically.
-I am a non-technical user — do everything yourself:
-
-1. Check the environment: git and Node.js >= 20 must be available. Install
-   anything missing yourself (macOS: Homebrew, Windows: winget). Also install
-   cloudflared.
-2. Download: clone https://github.com/XiaoDuoYa/codex-with-chatgpt into
-   ~/codex-with-chatgpt (if it already exists, git pull to update).
-3. Build: inside that folder run `corepack pnpm install` then `corepack pnpm build`.
-4. Install the Skill: copy skill/SKILL.md to
-   ~/.codex/skills/codex-with-chatgpt/SKILL.md, and update the line
-   "The codex-with-chatgpt checkout lives at:" to the actual clone path.
-5. First-time setup: follow the SKILL.md "first-time setup" workflow
-   (run c2c setup, configure the ChatGPT connector in the BUILT-IN browser,
-   enter the pairing code). Never open a third-party browser.
-6. Only interrupt me for logins (ChatGPT / Cloudflare), CAPTCHAs or 2FA —
-   and give me exactly ONE action at a time.
-7. When done, show me the ✓ checklist and confirm the file-read test passed.
-   I don't know what MCP, OAuth, tunnels or ports are. Don't explain them.
-   If anything breaks, fix it yourself first.
-```
-
-
-**Updates · 更新** — The Skill checks GitHub once a day and updates itself when a
-new version is released; no action needed. You can also say "更新 Codex with ChatGPT"
-anytime. / Skill 每天自动检查一次 GitHub，有新版本会自动更新，无需任何操作；
-也可以随时对 Codex 说"更新 Codex with ChatGPT"。
+> **遇到问题？** 请先运行 `c2c doctor` 或向 Claude Code 输入 `/chatgpt-collab doctor`。  
+> **Having trouble?** First run `c2c doctor` or invoke `/chatgpt-collab doctor` in Claude Code.
 
 ---
 
-*The sections below are in English. 以下详细内容为英文，中文完整版见
-[README.zh-CN.md](README.zh-CN.md)。*
+## The Problem · 解决什么问题
 
-## Install → Setup → Use (manual)
+**English** — ChatGPT Plus/Pro web quotas often sit idle while coding agents burn scarce API tokens on high-level architecture, task decomposition, and code reviews. This project routes the heavy reasoning and planning to your existing ChatGPT web subscription, while Claude Code CLI executes code changes, runs tests, and manages git locally. No reverse proxies, no API keys exposed to ChatGPT — just official web UI reasoning paired with a secure, read-only MCP bridge.
 
-1. Install the Codex Skill: copy `skill/` to `~/.codex/skills/codex-with-chatgpt/`.
-2. Tell Codex: **"Set up Codex with ChatGPT."** (中文: "使用 Codex with ChatGPT 完成首次配置。")
-3. Use Codex normally: **"Use Codex with ChatGPT to implement XXX."**
+**中文** — ChatGPT 付费订阅（Plus / Pro）的网页版额度往往大量闲置，而本地编码 Agent 却在消耗昂贵的 API 额度进行架构规划和代码审查。本项目将“思考与审查”交给网页版 ChatGPT，Claude Code 只负责本地执行。无逆向代理、无需向 ChatGPT 提供 API Key——官方 Web UI 配合只读 MCP 桥接。
 
-That's the whole manual. You don't need to know what MCP, OAuth, tunnels,
-ports or localhost are — Codex configures everything automatically and you
-just see:
+---
 
-```
-Codex with ChatGPT
+## What It Is · 这是什么
 
-✓ Project detected
-✓ Workspace Bridge started
-✓ Secure connection established
-✓ ChatGPT connected
-✓ File read test passed
+**English** — Turn ChatGPT Web into an architectural planning and review co-pilot for your Claude Code sessions, while Claude Code retains 100% execution ownership. Your entire repository is never uploaded in bulk: ChatGPT inspects only the exact files, diffs, and search results it needs on demand through an OAuth 2.1-secured, **strictly read-only** Model Context Protocol (MCP) connection.
 
-Ready.
-```
+**中文** — 将 ChatGPT 网页版作为 Claude Code 编码会话的“规划与审查大脑”，而本地执行权完全保留在 Claude Code 手中。项目代码永远不会被全量上传：ChatGPT 通过受 OAuth 2.1 保护的**严格只读** MCP 连接，仅按需调取所需的文件片段、diff 和搜索结果。
 
-The only steps that may need you: logging into ChatGPT (and, if you want a
-stable hostname, logging into Cloudflare once). A **new** workspace also asks
-you to create a ChatGPT Project (collection) once — pick **project-only
-memory**, name it after the workspace. If the sidebar has no Projects row,
-hover **Chats**, open the … menu, and choose **Organize by project**. Codex
-then saves that collection link and starts chats from that page. Existing
-workspaces that already have a C2C chat stay on the old one-conversation
-style until you ask to switch.
+**Provider-Agnostic Executor** — Claude Code operates as the local execution engine and can be powered by any model provider (Anthropic, 9Router, Google Gemini, Amazon Bedrock, Google Vertex AI, or local proxy) without affecting the C2C Bridge architecture.
 
-### Optional stable hostname
+---
 
-The default public address is a temporary Cloudflare URL. It changes when the
-bridge restarts, and Codex repairs ChatGPT by deleting that workspace's
-connector and adding it again.
-
-If you have a Cloudflare account and a domain already on Cloudflare, first-time
-setup (and the next coding session, once) will ask whether you want a stable
-hostname such as `c2c-<project>.your-domain.com`. That path opens a browser so
-you can authorize Cloudflare. After that, the ChatGPT connector keeps working
-across restarts. If you skip it, or login fails, Codex stays on the temporary
-address — same features, just a slower repair.
-
-Credentials stay in the OS app state directory, not in the project.
-
-## How it works
+## Target Architecture · 系统架构
 
 ```
-             ┌───────────────────────────┐
-             │       ChatGPT Web         │
-             │  Reason / Plan / Review   │
-             └──────────┬──────────▲─────┘
-                        │          │
-               MCP      │          │ Computer Use
-            Data Plane  │          │ Control Plane (<1 KB messages)
-                        ▼          │
-             ┌─────────────────────┐
-             │      C2C Bridge     │   loopback-only HTTP server
-             │  read-only MCP      │   OAuth 2.1 + one-time pairing code
-             │  OAuth + Pairing    │   Cloudflare Quick Tunnel
-             │  Tunnel Manager     │
-             └──────────┬──────────┘
-                        │  read-only
-                        ▼
-             ┌─────────────────────┐          ┌─────────────────────┐
-             │   Local Workspace   │◀─────────│    Codex Harness    │
-             └─────────────────────┘ edit/git │ shell / tests / fix │
-                                              └─────────────────────┘
+                 ┌───────────────────────────────────────────────┐
+                 │          ChatGPT Web / Projects               │
+                 │       (Reasoning / Planning / Review)         │
+                 └───────────────┬───────────────────────▲───────┘
+                                 │                       │
+                   MCP Data Plane│                       │ Control Plane (<1 KB)
+            (Streamable HTTP + OAuth 2.1)                │ Mode C: Guided Manual Handoff
+                                 ▼                       │ Mode A: Optional Script
+                 ┌───────────────────────────────────────┴───────┐
+                 │            C2C Bridge Daemon                  │
+                 │  - Loopback HTTP (127.0.0.1:48765)            │
+                 │  - OAuth 2.1 AS + PKCE (RFC 8414 / RFC 7591)  │
+                 │  - CSPRNG One-Time Pairing Manager            │
+                 │  - 9 Read-Only MCP Tools                      │
+                 │  - Cloudflare Tunnel (Quick / Named)          │
+                 │  - Windows & POSIX Path Hardening             │
+                 └───────────────────────┬───────────────────────┘
+                                         │
+                   Canonical Realpaths   │ Read-Only Containment
+                   Case-Insensitive Match│
+                   NTFS Stream Rejection │
+                                         ▼
+                 ┌───────────────────────────────────────────────┐
+                 │               Local Workspace                 │
+                 │   (Source files, git repo, .c2cignore)        │
+                 └───────────────────────▲───────────────────────┘
+                                         │
+                     File Edits / Shell  │ Git Commits / Tests
+                                         │
+                 ┌───────────────────────┴───────────────────────┐
+                 │            Claude Code CLI Harness            │
+                 │  - .claude/skills/chatgpt-collab/SKILL.md     │
+                 │  - Native Slash Command: /chatgpt-collab      │
+                 │  - Provider-Agnostic Execution Engine         │
+                 └───────────────────────────────────────────────┘
 ```
 
-- **Control plane (Computer Use)**: Codex and ChatGPT exchange tiny structured
-  `[C2C]` state messages — `INIT → PLAN → EXECUTED → REVIEW → DONE`. No diffs,
-  no logs, no file bodies are ever pasted.
-- **Data plane (MCP)**: ChatGPT pulls what it needs itself through 9 read-only
-  tools: `workspace_info`, `list_directory`, `read_file`, `search_workspace`,
-  `git_status`, `git_diff`, `test_status`, `execution_summary`,
-  `execution_output`.
-- **Independent review**: after Codex executes, ChatGPT inspects the actual
-  git diff and test records through MCP — it never trusts "all tests passed"
-  claims blindly.
+- **Dual-Plane Separation**:
+  - **Control Plane**: Claude Code and ChatGPT exchange minimal, structured `[C2C]` state messages (`INIT → PLAN → EXECUTED → REVIEW → DONE`). Message payloads are strictly under 1 KB. No file contents, logs, or diffs are pasted directly.
+  - **Data Plane (Read-Only MCP)**: ChatGPT queries workspace structure, files, git diffs, and test output on demand via 9 read-only MCP tools (`workspace_info`, `list_directory`, `read_file`, `search_workspace`, `git_status`, `git_diff`, `test_status`, `execution_summary`, `execution_output`).
+- **Independent Verification Loop**: After Claude Code implements changes, ChatGPT inspects the actual git diff and sanitized execution records through MCP rather than blindly trusting local test reports.
 
-## Security model (short version)
+---
 
-- **Read-only by construction**: write/delete/shell/commit tools simply do not
-  exist on the server. No prompt injection can enable them.
-- **One workspace = one boundary**: every token is bound to a single workspace;
-  path containment uses canonical realpaths (symlink/`../`/absolute-path escapes
-  are all blocked and tested).
-- **Sensitive files never leave**: `.env*`, keys, SSH, credentials are denied by
-  default (`.env.example` allowed); `.c2cignore` adds your own rules.
-- **Knowing the URL grants nothing**: the public MCP endpoint requires OAuth 2.1
-  (PKCE S256, dynamic client registration, rotating refresh tokens). Without a
-  token: 401. Wrong workspace: 403.
-- **The model never sees long-lived credentials**: the only secret that ever
-  touches a browser is a one-time pairing code (5-minute TTL, 5 attempts,
-  rate-limited, destroyed on use).
+## One-Paste Install · 一段话安装
 
-Full threat model: [docs/security.md](docs/security.md)
+### For Claude Code CLI (English)
 
-## For developers
+Copy the prompt below and paste it to Claude Code:
+
+```text
+Please install and configure "claude-code-with-chatgpt" for me:
+
+1. Environment check: Ensure git and Node.js >= 20 are available. Ensure cloudflared is installed (macOS: brew, Windows: winget).
+2. Clone & Build: Clone https://github.com/XiaoDuoYa/codex-with-chatgpt into ~/claude-code-with-chatgpt (or pull if existing), then run `corepack pnpm install` and `corepack pnpm build`.
+3. Skill Setup: Copy .claude/skills/chatgpt-collab to the local workspace's .claude/skills/chatgpt-collab (or global ~/.claude/skills/chatgpt-collab), setting the checkout path.
+4. Initialization: Run `c2c setup` to launch the local bridge daemon and generate the public pairing URL and one-time code.
+5. Guide me through Mode C pairing in ChatGPT Web (Security -> Developer Mode -> Connectors -> Add Connector).
+6. Verify file-read and workspace_info over MCP, and show a confirmation checklist when ready.
+```
+
+### 适用于 Claude Code（简体中文）
+
+将以下提示词直接发送给 Claude Code：
+
+```text
+请帮我完整安装并配置 claude-code-with-chatgpt：
+
+1. 环境自检：检查 git 与 Node.js ≥ 20，并确保已安装 cloudflared（macOS 使用 brew，Windows 使用 winget）。
+2. 下载与构建：克隆仓库到 ~/claude-code-with-chatgpt（已存在则 git pull），执行 corepack pnpm install && corepack pnpm build。
+3. 配置 Skill：将 .claude/skills/chatgpt-collab 放置到工作区或 ~/.claude/skills/chatgpt-collab，并更新实际克隆路径。
+4. 启动服务：执行 c2c setup 启动本地桥接守护进程与隧道，获取公网 MCP 地址及一次性配对码。
+5. 引导配对：指引我在 ChatGPT 网页版（设置 -> 安全 -> 开发者模式 -> 连接器）完成 Mode C 手动添加连接器与配对。
+6. 验证 MCP 连通性（workspace_info 与只读测试），全部就绪后输出完成清单。
+```
+
+---
+
+## Quickstart & Usage · 快速上手
+
+### 1. Manual Installation
+```bash
+# Clone the repository
+git clone https://github.com/XiaoDuoYa/codex-with-chatgpt.git ~/claude-code-with-chatgpt
+cd ~/claude-code-with-chatgpt
+
+# Install dependencies and build
+corepack pnpm install
+corepack pnpm build
+
+# Link CLI globally (optional)
+npm link
+```
+
+### 2. Configure Claude Code Skill
+Ensure `.claude/skills/chatgpt-collab/SKILL.md` is present in your project root or `~/.claude/skills/chatgpt-collab/SKILL.md`.
+
+### 3. Initialize the Bridge
+Inside your target project workspace:
+```bash
+c2c setup
+```
+This command starts the loopback daemon, establishes a Cloudflare tunnel, and outputs:
+- **Public MCP Server URL** (e.g. `https://random-words.trycloudflare.com/mcp`)
+- **One-Time Pairing Code** (8 characters, 5-minute validity)
+- **Connector Name** (e.g. `Claude Code with ChatGPT · my-app`)
+
+### 4. Connect in ChatGPT Web (Mode C: Guided Manual Handoff)
+1. Open ChatGPT Web -> **Settings** -> **Security** -> Enable **Developer Mode**.
+2. Go to **Settings** -> **Connectors** (or visit `https://chatgpt.com/plugins#settings/Connectors`).
+3. Click **Create Connector**:
+   - **Name**: `Claude Code with ChatGPT` (or your workspace connector name)
+   - **Server URL**: The `https://...trycloudflare.com/mcp` URL provided by `c2c setup`
+   - **Authentication**: `OAuth`
+4. Click **Connect** / **Authorize**, enter the 8-character pairing code in the browser window, and submit.
+5. In a new ChatGPT conversation, paste the **Boot Prompt** (available in `docs/protocol.md` or via `/chatgpt-collab boot`).
+
+### 5. Running a Task
+In Claude Code CLI:
+```text
+/chatgpt-collab Implement user authentication with JWT and refresh tokens
+```
+Claude Code will format the `[C2C] STATE: INIT` prompt for ChatGPT. Paste ChatGPT's `[C2C] STATE: PLAN` reply into Claude Code, and let Claude Code execute, test, and request review.
+
+*(Optional Mode A)*: If external browser automation is preferred, `node scripts/browser-agent.mjs` can automate prompt transfers when explicitly configured.
+
+---
+
+## Security Model · 安全模型
+
+- **Strictly Read-Only MCP**: No write, delete, shell execution, or git mutation tools exist on the bridge server. Prompt injection cannot execute destructive actions.
+- **Hardened Path Containment**: Resolves canonical realpaths of the deepest ancestor; rejects path traversal (`../`), null bytes, Windows Alternate Data Streams (`::$DATA`), colons, and trailing dots/whitespace.
+- **Sensitive Credential Protection**: Hard rejection of private keys, `.env*` files (allowing `.env.example`), cloud tokens, and `.git/` internal metadata.
+- **Modern Secret Redaction**: Execution logs automatically scrub OpenAI project keys (`sk-proj-...`), Anthropic keys (`sk-ant-...`), Google API keys (`AIza...`), bearer headers, and user home directories.
+- **OAuth 2.1 + PKCE**: All MCP endpoints require RFC 8414 and RFC 7591 compliant bearer authentication. Ephemeral pairing codes use CSPRNG (5-minute TTL, 5-attempt rate limit).
+
+For detailed threat modeling and boundary guarantees, see [docs/security.md](docs/security.md).
+
+---
+
+## CLI Reference & Developer Guide
 
 ```bash
-pnpm install
-pnpm build          # -> dist/, exposes the `c2c` bin
-pnpm test           # vitest: 146 tests (path security, OAuth, pairing, MCP e2e)
+# Core Lifecycle Commands
+c2c setup           # Start bridge, tunnel, and generate pairing code
+c2c status          # Inspect daemon, tunnel, and pairing status
+c2c doctor          # Diagnostic health check with automated auto-repair
+c2c pair            # Generate a fresh 8-char pairing code
+c2c unpair          # Revoke all OAuth tokens for the workspace
+c2c stop            # Stop the background daemon and tunnel
+c2c logs            # View bridge and access logs (--verbose for debug)
 
-c2c setup           # bridge + tunnel + pairing code, all in one
-c2c sandbox-allow   # whitelist the settings dir in Codex (macOS + Windows)
-c2c status / doctor / pair / unpair / logs / stop
+# Configuration & Permissions
+c2c config-allow    # Configure .claude/settings.json permissions & writable paths
+c2c session         # View or manage active task checkpoints
+c2c record          # Manually log execution iterations and test outcomes
 ```
 
-Requirements: Node.js >= 20, git. `cloudflared` for the public connection
-(auto-detected; the Skill installs it for you).
-
-Docs: [architecture](docs/architecture.md) · [protocol](docs/protocol.md) ·
-[security](docs/security.md) · [troubleshooting](docs/troubleshooting.md)
-
-## Project layout
-
-```
-src/
-  bridge/     loopback HTTP server, port recovery, admin API
-  mcp/        9 read-only tools, stateless Streamable HTTP
-  auth/       OAuth 2.1 (PKCE, DCR, refresh rotation, revocation)
-  pairing/    one-time pairing codes (CSPRNG, TTL, rate limits)
-  workspace/  path containment, sensitive-file policy, search, git
-  tunnel/     TunnelProvider abstraction + Cloudflare Quick/Named Tunnel
-  execution/  execution records for the review loop
-  process/    daemon lifecycle
-  cli/        the c2c CLI
-skill/        the Codex Skill (the real UX layer)
-tests/        unit + integration tests
-docs/         architecture / protocol / security / troubleshooting
+### Building and Testing
+```bash
+pnpm install        # Install project dependencies
+pnpm build          # Compile TypeScript to dist/
+pnpm test           # Run Vitest test suites (workspace, auth, mcp, security)
+pnpm typecheck      # Verify TypeScript strict type-checking
 ```
 
-## Status & disclaimer
+---
 
-V1. Verified end-to-end: bridge, OAuth + pairing, public tunnel, ChatGPT
-connector setup, zero-touch first-run experience.
+## Documentation Links
 
-**Unofficial community project. Not affiliated with or endorsed by OpenAI.**
+- [System Architecture](docs/architecture.md)
+- [C2C Protocol Specification](docs/protocol.md)
+- [Security & Threat Model](docs/security.md)
+- [Troubleshooting & Diagnostics](docs/troubleshooting.md)
+- [Claude Code Migration Guide](docs/claude-code-port.md)
 
-## License
+---
 
-[MIT](LICENSE)
+## Upstream Attribution & License
+
+This project is an evolution and port of [XiaoDuoYa/codex-with-chatgpt](https://github.com/XiaoDuoYa/codex-with-chatgpt) adapted for the Claude Code CLI and Anthropic ecosystem.
+
+Distributed under the [MIT License](LICENSE).  
+*Unofficial community project. Not affiliated with or endorsed by Anthropic or OpenAI.*

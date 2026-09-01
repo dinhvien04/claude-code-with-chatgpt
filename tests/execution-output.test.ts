@@ -16,10 +16,18 @@ describe("sanitizeExecutionOutput", () => {
     }
   });
 
-  it("rejects private keys entirely", () => {
+  it("rejects private keys entirely (including lowercase and OPENSSH headers)", () => {
     const result = sanitizeExecutionOutput("oops\n-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----");
     expect(result.allowed).toBe(false);
     if (!result.allowed) expect(result.reason).toBe("private_key");
+
+    const lower = sanitizeExecutionOutput("oops\n-----begin rsa private key-----\nMIIE\n-----end rsa private key-----");
+    expect(lower.allowed).toBe(false);
+    if (!lower.allowed) expect(lower.reason).toBe("private_key");
+
+    const openssh = sanitizeExecutionOutput("-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----");
+    expect(openssh.allowed).toBe(false);
+    if (!openssh.allowed) expect(openssh.reason).toBe("private_key");
   });
 
   it("rejects PGP private key blocks", () => {
@@ -27,12 +35,23 @@ describe("sanitizeExecutionOutput", () => {
     expect(result.allowed).toBe(false);
   });
 
-  it("redacts home paths", () => {
-    const result = sanitizeExecutionOutput("wrote /Users/alice/proj/src/a.ts");
+  it("redacts home paths across platforms and formats (POSIX, D:\\Users, C:/Users)", () => {
+    const result = sanitizeExecutionOutput(
+      "POSIX: /Users/alice/proj/src/a.ts\n" +
+      "POSIX home: /home/bob/proj/src/a.ts\n" +
+      "Win D-drive: D:\\Users\\charlie\\repo\\file.ts\n" +
+      "Win C-forward: C:/Users/dave/repo/file.ts"
+    );
     expect(result.allowed).toBe(true);
     if (result.allowed) {
       expect(result.text).not.toContain("/Users/alice");
       expect(result.text).toContain("/Users/[user]");
+      expect(result.text).not.toContain("/home/bob");
+      expect(result.text).toContain("/home/[user]");
+      expect(result.text).not.toContain("D:\\Users\\charlie");
+      expect(result.text).toContain("D:\\Users\\[user]");
+      expect(result.text).not.toContain("C:/Users/dave");
+      expect(result.text).toContain("C:/Users/[user]");
     }
   });
 

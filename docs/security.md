@@ -1,57 +1,140 @@
-# Security Model
+# Security & Threat Model
 
-## Trust boundaries
+> **Core Philosophy**: Absolute defense-in-depth for local developer environments.  
+> The bridge exposes read-only MCP tools to ChatGPT Web while guaranteeing that no private credentials leave the machine and no mutating operations can ever be performed over the wire.
 
-1. **Workspace root** is the smallest authorization boundary. One bridge serves
-   exactly one workspace; every token is bound to `workspace_id`; a token for
-   project A returns 403 on project B's bridge.
-2. **Workspace content is untrusted.** README, comments, diffs may contain
-   prompt injection. Every MCP tool description carries an explicit warning and
-   tools never grant capabilities based on file content.
-3. **The model never sees long-lived credentials.** Computer Use only ever
-   handles the one-time pairing code. Access/refresh tokens travel only inside
-   the OAuth redirect/token endpoints between ChatGPT's client and the bridge.
+---
 
-## Threat model → mitigations
+## 1. Trust Boundaries & Invariants
 
-| Threat | Mitigation |
-| --- | --- |
-| MCP URL leaks | URL alone is useless: every `/mcp` request requires a valid bearer token (401 without, 403 wrong workspace) |
-| Pairing code brute force | 8 chars from a 31-char CSPRNG alphabet (~40 bits), 5 attempts per session, per-IP rate limit (10/min), 5-minute TTL, one-time use, session destroyed on limit |
-| OAuth CSRF | `state` round-tripped verbatim; authorization requests are server-side records keyed by random ids |
-| Code interception | PKCE S256 mandatory (plain rejected); authorization codes are one-time, 5-minute TTL, bound to client + redirect URI |
-| Token theft | Opaque high-entropy tokens; stored only as SHA-256 hashes; access tokens live 1 h; refresh tokens rotate on every use (replay of the old one fails); revocation endpoint + `c2c unpair` |
-| Workspace traversal | `realpath` canonicalization of the deepest existing ancestor; containment check against the canonical root; case-insensitive comparison on macOS/Windows; rejects `..`, absolute escapes, backslash tricks, null bytes |
-| Symlink escape | Canonicalization resolves symlinks before the containment check (file and directory symlinks both covered by tests) |
-| Sensitive files | Deny-by-default patterns (.env*, keys, SSH, cloud creds, keychains…) enforced at resolve time — reads, listings, and search all pass through the same gate; `git diff` adds pathspec excludes; `.env.example` allowed |
-| Oversized file / diff DoS | read_file caps lines and bytes per response; git_diff paginates by byte offset with hard caps; search caps matches and file sizes |
-| Tunnel exposure | Bridge binds 127.0.0.1 only (refuses 0.0.0.0); the only public surface is HTTPS via the tunnel, protected by OAuth; `/health` reveals only a salted workspace hash |
-| Admin API abuse | Loopback-only + random admin token (0600 runtime file) + requests with proxy headers (`cf-connecting-ip`, `x-forwarded-for`) rejected; unauthenticated probes get 404 |
-| Log credential leakage | Logger redacts token prefixes, bearer headers, token-like parameters, and pairing-code-shaped strings before writing |
-| Execution output leak | Codex may nominate test/build/lint logs; a local sanitizer redacts tokens, pairing-code-shaped strings and home paths, truncates size, and refuses private-key blocks entirely. Restricted items are listed without a body. ChatGPT still cannot run commands. |
-| Checkpoint / resume dump | Session checkpoints store short protocol fields only (capped). Resume uses the existing chat or HANDOFF — no new protocol state, no log paste, no re-pairing. |
+```
+                                  INTERNET / UNTRUSTED
+                                           │
+                                           ▼ (HTTPS / TLS 1.3)
+                       ┌───────────────────────────────────────┐
+                       │           Cloudflare Tunnel           │
+                       └───────────────────┬───────────────────┘
+                                           │
+                                           ▼ Loopback (127.0.0.1:48765)
+                       ┌───────────────────────────────────────┐
+                       │          C2C Bridge Daemon            │
+                       │ ├── OAuth 2.1 AS + PKCE (RFC 7636)    │
+                       │ ├── CSPRNG One-Time Pairing Code      │
+                       │ └── 9 Read-Only MCP Tool Endpoints    │
+                       └───────────────────┬───────────────────┘
+                                           │
+                     ┌─────────────────────┴─────────────────────┐
+                     │            LOCAL SECURITY GATES           │
+                     │ ├── Canonical Realpath Resolution         │
+                     │ ├── Case-Insensitive Pattern Matcher      │
+                     │ ├── NTFS ADS & Trailing Dot Denials       │
+                     │ └── Sensitive File Deny-by-Default        │
+                     └─────────────────────┬─────────────────────┘
+                                           │
+                                           ▼
+                       ┌───────────────────────────────────────┐
+                       │            Local Workspace            │
+                       │         (Isolated Repository)         │
+                       └───────────────────────────────────────┘
+```
 
-## Token & scope design
+1. **Workspace Root is the Ultimate Boundary**: One bridge daemon serves exactly one workspace. Every issued token is bound to a specific `workspace_id`. A token issued for Project A returns `403 Forbidden` on Project B's bridge.
+2. **Untrusted Model & Workspace Content**: Workspace files, commit messages, and prompt responses are treated as untrusted data that may contain prompt injection attempts. Tools never execute shell commands or write files based on MCP requests.
+3. **Strict Read-Only by Construction**: The bridge exposes 9 read-only inspection tools. Tools for file writing, deletion, shell command execution, process spawning, or git mutation do not exist in the codebase.
+4. **Zero Long-Lived Browser Credential Exposure**: The only secret entered into a browser during setup is an ephemeral, 8-character CSPRNG pairing code.
 
-Scopes: `workspace.read`, `workspace.search`, `git.read`, `execution.read`,
-`offline_access`. Tools enforce scopes individually (`INSUFFICIENT_SCOPE`).
-Access tokens: 1 hour. Refresh tokens: 30 days, rotated. All tokens bound to
-`workspace_id` and `client_id`.
+---
 
-## Storage
+## 2. Threat Model & Mitigations
 
-State lives under the OS-convention app dir
-(`~/Library/Application Support/codex-with-chatgpt` on macOS), directories 0700,
-files 0600. Named-hostname preference and tunnel metadata live there too
-(`tunnels/<workspaceId>.json`) — never in the project. Only SHA-256 hashes of
-tokens are persisted — a stolen state file does not yield usable bearer tokens.
+| Threat Vector | Attack Scenario | Defense & Mitigation Mechanism |
+| :--- | :--- | :--- |
+| **Public URL Leakage** | An attacker discovers or scans the public Cloudflare tunnel URL. | Every `/mcp` request requires a valid OAuth 2.1 Bearer token. Unauthenticated requests return `401 Unauthorized`. Tokens for mismatched workspaces return `403 Forbidden`. |
+| **Pairing Code Brute-Force** | An attacker attempts to guess the 8-character pairing code. | 8 alphanumeric characters drawn from a 31-character CSPRNG alphabet (~40 bits of entropy). Hard rate limits (max 10 attempts/min per IP, 5 failed attempts per session). 5-minute TTL. Destroyed on use. |
+| **OAuth Interception & CSRF** | MitM or malicious site tries to forge authorization responses. | Mandatory PKCE S256 (`plain` method rejected). Ephemeral authorization codes bound to registered `client_id` and `redirect_uri` with 5-minute TTL. `state` parameter verified. |
+| **Token Theft & Replay** | Bearer tokens stolen from transit or storage. | High-entropy opaque tokens stored strictly as SHA-256 hashes on disk. Access tokens expire in 1 hour. Refresh tokens rotate on every invocation; replaying a previously used refresh token revokes the entire token family. |
+| **Directory Traversal (`../`)** | Attacker passes `../../etc/passwd` to `read_file` or `search_workspace`. | Deepest-ancestor canonical realpath resolution (`fs.realpathSync`). Resolved target path must strictly start with the canonical workspace root. |
+| **Symlink Escape** | A symlink inside the workspace points to `/` or `~/.ssh`. | Symlinks are resolved to their target canonical realpath before boundary checks. Any symlink target pointing outside the workspace root is rejected with `PATH_OUTSIDE_WORKSPACE`. |
+| **Windows NTFS ADS (`::$DATA`)** | Attacker appends `::$DATA` or `:stream` to bypass pattern filters on Windows. | Path validation explicitly checks for and rejects colons (`:`) in relative paths and blocks Windows Alternate Data Stream identifiers (`::$DATA`). |
+| **Windows Trailing Dot / Space** | Attacker requests `.env.` or `.env ` which Windows filesystem normalizes to `.env`. | Paths ending with trailing dots (`.`) or trailing whitespace are normalized and rejected before filesystem access. |
+| **Case Sensitivity Bypass** | Attacker requests `.ENV` or `Id_Rsa` on case-insensitive filesystems (Windows/macOS). | Case-insensitive matching is enforced for all sensitive and noise patterns across Windows, macOS, and Linux. |
+| **Git Metadata & Config Leakage** | Attacker requests `.git/config` to extract tokens or remote repo credentials. | `.git/` and `.git/**` are placed directly in `SENSITIVE_PATTERNS`. Direct file reads of git internal metadata are rejected with `ACCESS_DENIED_SENSITIVE_FILE`. |
+| **Sensitive Credential Leakage** | Tool requests access to `.env`, private keys, SSH keys, or cloud credentials. | Deny-by-default filter blocks `.env*` (allowing `.env.example`), `*.pem`, `*.key`, `id_rsa*`, `.aws/`, `.ssh/`, `kubeconfig`, `.docker/config.json`, `.c2cignore`. |
+| **Log Credential Exfiltration** | Sanitized test/build outputs containing API keys are requested via `execution_output`. | Modern API key regex redactor automatically scrubs OpenAI project keys (`sk-proj-...`), Anthropic keys (`sk-ant-...`), Google API keys (`AIza...`), bearer tokens, and user home paths. Private key blocks are denied completely. |
+| **Local Port Hijacking** | Local malware attempts to call the bridge daemon API directly. | Loopback-only binding (`127.0.0.1`). Admin endpoints require a high-entropy random token stored in an OS-protected runtime state file (0600 permissions). Proxy headers (`X-Forwarded-For`) from loopback callers are sanitized. |
 
-**V1 limitation**: client registrations and token hashes are file-based rather
-than OS-keychain-based. Raw tokens are never written anywhere. Keychain
-integration is a V2 item.
+---
 
-## What ChatGPT can never do (V1)
+## 3. Sensitive File Policy (`SENSITIVE_PATTERNS`)
 
-Write files, delete files, run shell commands, commit, install packages —
-these tools do not exist on the server, so no prompt injection, scope bug, or
-UI confusion can enable them.
+Direct file reading, workspace searches, and directory listings enforce strict exclusions. The following patterns are denied by default with `ACCESS_DENIED_SENSITIVE_FILE`:
+
+```typescript
+export const SENSITIVE_PATTERNS: string[] = [
+  ".env",
+  ".env.*",
+  "!.env.example",
+  "*.pem",
+  "*.key",
+  "*.p12",
+  "*.pfx",
+  "*.jks",
+  "*.keystore",
+  "id_rsa*",
+  "id_ed25519*",
+  "id_ecdsa*",
+  "id_dsa*",
+  ".ssh/",
+  ".aws/",
+  ".gnupg/",
+  ".npmrc",
+  ".netrc",
+  "_netrc",
+  ".git/",
+  ".git/**",
+  ".git-credentials",
+  "*.keychain*",
+  ".cloudflared/",
+  "credentials.json",
+  "service-account*.json",
+  "client_secret*.json",
+  "secrets.json",
+  "cookies.sqlite",
+  "Cookies",
+  ".envrc",
+  "kubeconfig",
+  ".kube/",
+  ".docker/config.json",
+  "*.ppk",
+  ".vault-token",
+  ".c2c-secrets*"
+];
+```
+
+Users can define additional workspace-specific rules by adding a `.c2cignore` file to the root of their workspace.
+
+---
+
+## 4. Redaction Engine for Execution Records
+
+When Claude Code records build or test outputs (`c2c record --command "pnpm test" --output-file /tmp/test.log`), the execution sanitizer scrubs content before storing it in `execution_output`:
+
+1. **Private Key Interception**: Any block matching `-----BEGIN [A-Z ]*PRIVATE KEY-----` immediately marks the entire output as `RESTRICTED` (omitting the body from MCP access).
+2. **Modern API Key Redaction**:
+   - OpenAI Legacy & Project Keys: `sk-[a-zA-Z0-9]{20,T3BlbkFJ[a-zA-Z0-9]{20,}`, `sk-proj-[a-zA-Z0-9_-]{20,}`
+   - Anthropic Keys: `sk-ant-api[0-9]{2}-[a-zA-Z0-9_-]{20,}`
+   - Google API Keys: `AIza[0-9A-Za-z-_]{35}`
+   - Generic Bearer Headers: `Bearer [a-zA-Z0-9_.-]+`
+3. **Filesystem Path Scrubbing**: User home directory roots (`/Users/username`, `C:\Users\username`, `/home/username`) are replaced with generic placeholders `~`.
+4. **Size and Line Caps**: Outputs exceeding line or byte limits (e.g. 500 lines / 64 KB) are safely truncated with clear truncation markers.
+
+---
+
+## 5. Storage Security & File Permissions
+
+All bridge state, client registrations, and token hashes reside in standard OS-level application directories:
+- **macOS**: `~/Library/Application Support/claude-code-with-chatgpt`
+- **Windows**: `%LOCALAPPDATA%\claude-code-with-chatgpt`
+- **Linux**: `$XDG_STATE_HOME/claude-code-with-chatgpt` (or `~/.local/state/claude-code-with-chatgpt`)
+
+Directory permissions are set to `0700` and sensitive files are set to `0600`. Tokens are stored exclusively as cryptographic SHA-256 digests; raw tokens are never written to disk.

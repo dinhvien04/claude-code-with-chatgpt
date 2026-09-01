@@ -3,7 +3,7 @@ import path from "node:path";
 import { ensureDir, getStateDir } from "../config/paths.js";
 
 /**
- * Lightweight execution records written by the Codex harness after each
+ * Lightweight execution records written by the executor harness after each
  * iteration (via `c2c record`). ChatGPT reads them through the
  * `execution_summary` and `test_status` MCP tools.
  */
@@ -14,8 +14,9 @@ export interface ExecutionRecord {
   tests: string | null;
   exitStatus: "ok" | "failed" | "blocked" | string;
   timestamp: string;
+  executor?: "claude-code" | "codex" | "cli" | string;
   notes?: string;
-  /** Present when Codex recorded a sanitized command output for this iteration. */
+  /** Present when the harness recorded a sanitized command output for this iteration. */
   outputId?: number;
   outputAvailable?: boolean;
 }
@@ -35,11 +36,13 @@ export function readExecutionRecords(workspaceId: string, limit = 10): Execution
   if (!fs.existsSync(file)) return [];
   const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
   const records: ExecutionRecord[] = [];
-  for (const line of lines.slice(-limit)) {
+  for (let i = lines.length - 1; i >= 0 && records.length < limit; i--) {
+    const line = lines[i]?.trim();
+    if (!line) continue;
     try {
-      records.push(JSON.parse(line) as ExecutionRecord);
+      records.unshift(JSON.parse(line) as ExecutionRecord);
     } catch {
-      // skip corrupt lines
+      // skip corrupt/torn lines gracefully
     }
   }
   return records;

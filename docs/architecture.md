@@ -1,80 +1,127 @@
 # Architecture
 
 ```
-             ┌───────────────────────────┐
-             │    ChatGPT Web / Sol      │
-             │  Reason / Plan / Review   │
-             └──────────┬──────────▲─────┘
-                        │          │
-               MCP      │          │ Computer Use
-            Data Plane  │          │ Control Plane
-                        ▼          │
-             ┌─────────────────────┐
-             │      C2C Bridge     │
-             │  MCP Server (RO)    │
-             │  OAuth AS + PRM     │
-             │  Pairing Manager    │
-             │  Tunnel Manager     │
-             │  Admin API (local)  │
-             └──────────┬──────────┘
-                        │  read-only
-                        ▼
-             ┌─────────────────────┐
-             │   Local Workspace   │
-             └──────────▲──────────┘
-                        │ edit / shell / git / test
-             ┌──────────┴──────────┐
-             │  Codex Harness      │
-             └─────────────────────┘
+                 ┌───────────────────────────────────────────────┐
+                 │          ChatGPT Web / Projects               │
+                 │       (Reasoning / Planning / Review)         │
+                 └───────────────┬───────────────────────▲───────┘
+                                 │                       │
+                   MCP Data Plane│                       │ Control Plane (<1 KB)
+            (Streamable HTTP + OAuth 2.1)                │ Mode C: Guided Manual Handoff
+                                 ▼                       │ Mode A: Optional Script
+                 ┌───────────────────────────────────────┴───────┐
+                 │            C2C Bridge Daemon                  │
+                 │  - Loopback HTTP (127.0.0.1:48765)            │
+                 │  - OAuth 2.1 AS + PKCE (RFC 8414 / RFC 7591)  │
+                 │  - CSPRNG One-Time Pairing Manager            │
+                 │  - 9 Read-Only MCP Tools                      │
+                 │  - Cloudflare Tunnel (Quick / Named)          │
+                 │  - Windows & POSIX Path Hardening             │
+                 └───────────────────────┬───────────────────────┘
+                                         │
+                   Canonical Realpaths   │ Read-Only Containment
+                   Case-Insensitive Match│
+                   NTFS Stream Rejection │
+                                         ▼
+                 ┌───────────────────────────────────────────────┐
+                 │               Local Workspace                 │
+                 │   (Source files, git repo, .c2cignore)        │
+                 └───────────────────────▲───────────────────────┘
+                                         │
+                     File Edits / Shell  │ Git Commits / Tests
+                                         │
+                 ┌───────────────────────┴───────────────────────┐
+                 │            Claude Code CLI Harness            │
+                 │  - .claude/skills/chatgpt-collab/SKILL.md     │
+                 │  - Native Slash Command: /chatgpt-collab      │
+                 │  - Provider-Agnostic Execution Engine         │
+                 │  - Worktree Isolation & Settings Allowlist    │
+                 └───────────────────────────────────────────────┘
 ```
 
-## Principles
+---
 
-- **ChatGPT thinks. Codex works.** The bridge never re-implements a coding harness.
-- **Computer Use = control plane**: tiny `[C2C]` state messages (< 1 KB).
-- **MCP = data plane**: ChatGPT pulls files/diffs/search results itself.
-- **Read-only by design**: no write/exec tools exist in V1 at all.
-- **Workspace is the security boundary**: one bridge = one workspace = one token audience.
+## Core Principles
 
-## Components (src/)
+- **ChatGPT thinks. Claude Code works.** The bridge routes architectural planning, task decomposition, and code reviews to ChatGPT Web, while Claude Code CLI executes file modifications, runs tests, and manages git commits locally.
+- **Dual-Plane Separation**:
+  - **Control Plane**: Lightweight structured `[C2C]` state messages (< 1 KB) exchanged between human, Claude Code, and ChatGPT.
+  - **Data Plane**: Direct, read-only MCP over Streamable HTTP. ChatGPT pulls files, diffs, git trees, and test records independently.
+- **Read-Only by Construction**: No mutating tools (write, delete, shell, git commit) exist on the MCP server. Prompt injection cannot compromise the local filesystem.
+- **Strict Workspace Containment**: One bridge daemon = one workspace = one token audience. Symlink resolution, canonical realpaths, and case-insensitive pattern matching prevent unauthorized escapes.
+- **Provider-Agnostic Local Execution**: Claude Code serves as the execution engine and operates transparently regardless of the underlying backend (Anthropic API, 9Router, Google Gemini, Amazon Bedrock, or custom local gateways).
+
+---
+
+## Control Plane Realization (Modes C & A)
+
+Claude Code runs primarily as a native CLI terminal tool without an embedded GUI/Electron browser environment. The control plane accommodates this through two operational modes:
+
+1. **Mode C: Guided Manual Handoff (Primary & Default)**
+   - Claude Code formats single-click copyable `[C2C]` prompt blocks in the terminal.
+   - The user pastes the block into ChatGPT Web.
+   - ChatGPT queries the workspace via MCP tools and replies with `[C2C] STATE: PLAN`.
+   - The user pastes the plan back to Claude Code. Claude Code implements, verifies, and records execution (`c2c record`).
+   - Claude Code generates `[C2C] STATE: EXECUTED` for the user to pass to ChatGPT for final review.
+   - 100% reliable, zero browser automation dependencies, resilient to CAPTCHAs and 2FA.
+
+2. **Mode A: Optional Scripted Automation (`scripts/browser-agent.mjs`)**
+   - For users who prefer semi-automated browser interactions, an optional standalone Playwright script can transfer prompts.
+   - Designed to gracefully fail over to Mode C immediately upon encountering Cloudflare Turnstile, login prompts, or DOM timeouts.
+
+---
+
+## Component Architecture (`src/`)
 
 | Module | Responsibility |
-| --- | --- |
-| `bridge/` | Express app assembly, loopback-only listener, port fallback, runtime state, admin API |
-| `mcp/` | McpServer with 9 read-only tools; stateless Streamable HTTP transport (fresh server per request, JSON responses) |
-| `auth/` | OAuth 2.1 authorization server: discovery metadata (RFC 8414 + Protected Resource Metadata), dynamic client registration (RFC 7591), authorization-code + PKCE (S256 only), refresh rotation, revocation (RFC 7009). Opaque tokens stored as SHA-256 hashes |
-| `pairing/` | PairingCode lifecycle: CSPRNG generation, TTL, attempt limits, IP rate limit, one-time use |
-| `workspace/` | Canonical-path containment (realpath of deepest existing ancestor), sensitive-file policy, `.c2cignore`, paginated read/list, ripgrep search with Node fallback, git status/diff with pagination |
-| `tunnel/` | `TunnelProvider` interface + Cloudflare Quick and workspace-configured Named Tunnel implementations; business logic is vendor-agnostic |
-| `execution/` | JSONL execution records plus optional sanitized command output (`execution_output`) |
-| `process/` | Daemon spawn/reuse, health probing, graceful shutdown |
-| `cli/` | `c2c` commands; `--json` everywhere for the Skill |
-| `config/`, `logger/` | OS-convention state dir, secret-redacting logger |
+| :--- | :--- |
+| `bridge/` | Express application setup, loopback listener (127.0.0.1), port fallback/reuse, daemon runtime state, and local loopback admin API. |
+| `mcp/` | Model Context Protocol server exposing 9 read-only tools via stateless Streamable HTTP transport. |
+| `auth/` | OAuth 2.1 authorization server compliant with RFC 8414 (discovery metadata), RFC 7591 (dynamic client registration), RFC 7636 (PKCE S256), refresh token rotation, and RFC 7009 revocation. Tokens stored as SHA-256 hashes. |
+| `pairing/` | One-time pairing code manager: CSPRNG generation, 5-minute TTL, 5-attempt brute-force protection, IP rate limiting, and single-use invalidation. |
+| `workspace/` | Workspace security boundary: canonical realpath resolution of deepest ancestors, Windows NTFS alternate stream rejection (`::$DATA`), case-insensitive sensitive file filtering, `.c2cignore` evaluation, paginated reads, ripgrep searches, and sanitized git status/diff inspection. |
+| `tunnel/` | `TunnelProvider` abstraction managing Cloudflare Quick Tunnels and named custom domains with health supervision and automatic reconnection. |
+| `execution/` | Execution record lifecycle (`c2c record`), tracking modified files, exit statuses, and sanitized test/build logs (`execution_output`) for ChatGPT review. |
+| `process/` | Background daemon supervision, cross-platform PID management, and graceful shutdown handlers. |
+| `cli/` | The `c2c` CLI interface (`setup`, `doctor`, `pair`, `unpair`, `status`, `logs`, `stop`, `config-allow`). |
+| `config/`, `logger/` | Cross-platform state directories (`%LOCALAPPDATA%` on Windows, `~/Library/Application Support` on macOS, `~/.local/state` on Linux) and secret-redacting logging. |
 
-## Request lifecycles
+---
 
-**MCP call**: ChatGPT → tunnel (https) → bridge `/mcp` → bearer middleware
-(401/403) → stateless StreamableHTTP transport → tool handler → workspace layer
-(path containment → ignore rules → pagination) → JSON result.
+## Request & Data Lifecycles
 
-**Authorization**: 401 with `WWW-Authenticate: resource_metadata=…` →
-`/.well-known/oauth-protected-resource/mcp` → AS metadata → DCR →
-`/oauth/authorize` (HTML pairing page) → pairing code verified → 302 with
-authorization code → `/oauth/token` (PKCE S256) → access + refresh tokens.
+### 1. Read-Only MCP Request Flow
+```
+ChatGPT Web
+    │
+    ▼ (HTTPS via Cloudflare Tunnel)
+C2C Bridge (/mcp endpoint)
+    │
+    ▼ Bearer Token Validation (OAuth 2.1 SHA-256 lookup)
+Stateless Streamable HTTP Handler
+    │
+    ▼ Tool Dispatcher (e.g. read_file, git_diff, search_workspace)
+Workspace Security Layer
+    │ ├── Canonical realpath verification (inside workspace root)
+    │ ├── Case-insensitive sensitive file filter (.env*, keys, .git/**)
+    │ └── Output pagination & size caps
+    ▼
+JSON Response -> Cloudflare Tunnel -> ChatGPT Web
+```
 
-**Ports**: prefer 48765, bind 127.0.0.1 only. On conflict, `/health` identifies
-whether the occupant is a c2c bridge for the same workspace (reuse) or not
-(fall back to an ephemeral port). Configuration follows automatically via the
-runtime state file; users never see ports.
+### 2. OAuth 2.1 Authorization & Pairing Flow
+1. **Challenge**: ChatGPT initiates connection to `/mcp` without credentials; Bridge returns `401 Unauthorized` with `WWW-Authenticate: resource_metadata="..."`.
+2. **Metadata Discovery**: ChatGPT fetches `/.well-known/oauth-protected-resource/mcp` and `/.well-known/oauth-authorization-server`.
+3. **Dynamic Client Registration**: ChatGPT registers client credentials via RFC 7591 at `/oauth/register`.
+4. **Pairing Verification**: ChatGPT opens browser to `/oauth/authorize`. User enters the 8-character CSPRNG pairing code.
+5. **Code Issuance**: Upon successful verification, the bridge issues a one-time authorization code and redirects back to ChatGPT with state.
+6. **Token Exchange**: ChatGPT trades authorization code + PKCE code verifier at `/oauth/token` for scoped access and refresh tokens.
 
-**Tunnel**: default is a Cloudflare Quick Tunnel (`cloudflared tunnel --url …`).
-The URL changes per start, so `c2c doctor` can restart it and tell the Skill to
-Delete + recreate that workspace's ChatGPT connector. A workspace may instead
-choose a named hostname once (`c2c tunnel choose --mode named`). The Skill asks
-before the first public URL exists; `cloudflared tunnel login` is the only extra
-user step. Tunnel name, hostname and preference live under the OS state dir
-(`tunnels/<workspaceId>.json`), never in the project. Named starts use
-`cloudflared tunnel --url … run <name>` so the public URL stays stable. If named
-provisioning fails, C2C falls back to Quick Tunnel. If a named tunnel later
-drops, doctor asks for a Cloudflare re-login (`namedRepair`) instead of
-rotating the ChatGPT connector.
+### 3. Port Allocation & Recovery
+- The bridge daemon defaults to port `48765` bound strictly to `127.0.0.1`.
+- If occupied, the bridge queries `/health`. If occupied by an existing C2C daemon for the same workspace, it is reused. If occupied by an alien process, an ephemeral port is selected automatically.
+- The active port and admin token are persisted to the local runtime state file; users and clients interact through CLI commands without manual port management.
+
+### 4. Tunnel Resilience
+- **Quick Tunnel (Default)**: Automatically provisions a transient `*.trycloudflare.com` URL. If restarted, `c2c doctor` detects the address rotation and prompts the user to update the connector.
+- **Named Tunnel (Optional Custom Domain)**: Configured via `c2c tunnel choose --mode named --zone <domain>`. Cloudflare DNS routes a stable hostname (e.g., `c2c-<project>.example.com`) directly to the local daemon, surviving reboots and restarts without requiring connector recreation.

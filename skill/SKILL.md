@@ -1,18 +1,21 @@
 ---
 name: codex-with-chatgpt
 description: >
-  Use ChatGPT (web) as the planning and review brain for Codex coding sessions,
-  while Codex keeps full execution ownership. Use when the user says
-  "使用 Codex with ChatGPT ..." / "Set up Codex with ChatGPT" / "用 ChatGPT 规划",
+  Use ChatGPT (web) as the planning and review brain for Claude Code and Codex coding sessions,
+  while the local CLI keeps full execution ownership. Use when the user says
+  "使用 Claude Code / Codex with ChatGPT ..." / "Set up with ChatGPT" / "用 ChatGPT 规划",
   when they ask to connect ChatGPT to the current workspace, disconnect it,
   or run a task through the ChatGPT planning loop.
 ---
 
-# Codex with ChatGPT
+# Claude Code & Codex with ChatGPT (Bridge & Compatibility Reference)
 
-ChatGPT thinks. Codex works.
+> **Note for Claude Code users**: The canonical project skill for Claude Code is located at `.claude/skills/chatgpt-collab/SKILL.md` (`chatgpt-collab`).
+> This file is maintained for backward compatibility with Codex `$CODEX_HOME` skill installations and cross-harness reference.
 
-You (Codex) own execution: editing, shell, git, tests, recovery.
+ChatGPT thinks. The local executor (Claude Code / Codex) works.
+
+You own execution: editing, shell, git, tests, recovery.
 ChatGPT owns high-level reasoning: understanding, planning, review, debug strategy.
 The C2C Bridge gives ChatGPT read-only MCP access to the current workspace, so
 control messages between you and ChatGPT stay tiny (< 1 KB) — ChatGPT pulls

@@ -27,10 +27,6 @@ export function ensureDir(dir: string): string {
   return dir;
 }
 
-export function stateSubdir(name: string): string {
-  return ensureDir(path.join(getStateDir(), name));
-}
-
 /** Write a JSON file with owner-only permissions. */
 export function writeSecureJson(file: string, data: unknown): void {
   ensureDir(path.dirname(file));

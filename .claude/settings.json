@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(c2c *)",
+      "Bash(node bin/c2c.js *)",
+      "Bash(pnpm test*)",
+      "Bash(pnpm typecheck*)",
+      "Bash(pnpm build*)"
+    ]
+  }
+}

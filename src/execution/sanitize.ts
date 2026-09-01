@@ -4,14 +4,16 @@ export const MAX_OUTPUT_BYTES = 64 * 1024;
 export const MAX_OUTPUT_LINES = 200;
 
 const HARD_REJECT: RegExp[] = [
-  /-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----/,
-  /-----BEGIN OPENSSH PRIVATE KEY-----/,
-  /-----BEGIN PGP PRIVATE KEY BLOCK-----/,
+  /-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----/i,
+  /-----BEGIN OPENSSH PRIVATE KEY-----/i,
+  /-----BEGIN PGP PRIVATE KEY BLOCK-----/i,
 ];
 
 const EXTRA_REDACT: RegExp[] = [
   /\bghp_[A-Za-z0-9]{20,}\b/g,
   /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\bsk-proj-[A-Za-z0-9_-]{20,}\b/g,
+  /\bsk-ant-[A-Za-z0-9_-]{20,}\b/g,
   /\bsk-[A-Za-z0-9]{20,}\b/g,
   /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g,
   /\bAKIA[0-9A-Z]{16}\b/g,
@@ -25,9 +27,13 @@ export type SanitizeResult =
 
 function redactHomePaths(text: string): string {
   return text
-    .replace(/\/Users\/[^/\s"'`]+/g, "/Users/[user]")
-    .replace(/\/home\/[^/\s"'`]+/g, "/home/[user]")
-    .replace(/C:\\Users\\[^\\\s"'`]+/gi, String.raw`C:\Users\[user]`);
+    .replace(/\/Users\/[^/\s"'`]+/gi, "/Users/[user]")
+    .replace(/\/home\/[^/\s"'`]+/gi, "/home/[user]")
+    .replace(/\b[a-zA-Z]:[/\\]Users[/\\][^/\\\s"'`]+/gi, (match) => {
+      const drive = match.slice(0, 2);
+      const sep = match.includes("/") ? "/" : "\\";
+      return `${drive}${sep}Users${sep}[user]`;
+    });
 }
 
 function applyExtraRedact(text: string): string {

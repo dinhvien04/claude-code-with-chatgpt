@@ -116,6 +116,41 @@ describe("gitDiff pagination", () => {
     expect(diff.isRepo).toBe(false);
   });
 
+  it("handles unborn repositories (0 commits) with isRepo: true across modes", () => {
+    const unborn = makeTmpDir("unborn-repo");
+    try {
+      git(unborn, "init", "-b", "main");
+      write(unborn, "hello.txt", "unborn content\n");
+
+      // 1. unstaged mode (untracked file, no staged changes, no commits)
+      const unstaged = gitDiff(unborn, { mode: "unstaged" });
+      expect(unstaged.isRepo).toBe(true);
+      expect(unstaged.diff).toBe("");
+
+      // 2. staged mode with unstaged file
+      const stagedEmpty = gitDiff(unborn, { mode: "staged" });
+      expect(stagedEmpty.isRepo).toBe(true);
+      expect(stagedEmpty.diff).toBe("");
+
+      // 3. head mode before any commit
+      const headBeforeAdd = gitDiff(unborn, { mode: "head" });
+      expect(headBeforeAdd.isRepo).toBe(true);
+      expect(headBeforeAdd.diff).toBe("");
+
+      // 4. stage the file and check staged & head diffs in unborn state
+      git(unborn, "add", "hello.txt");
+      const stagedAdded = gitDiff(unborn, { mode: "staged" });
+      expect(stagedAdded.isRepo).toBe(true);
+      expect(stagedAdded.diff).toContain("unborn content");
+
+      const headAdded = gitDiff(unborn, { mode: "head" });
+      expect(headAdded.isRepo).toBe(true);
+      expect(headAdded.diff).toContain("unborn content");
+    } finally {
+      cleanup(unborn);
+    }
+  });
+
   it("excludes all IgnoreRules sensitive patterns across unstaged, staged, and head modes", () => {
     const sensitiveFiles = [
       { path: ".env", content: "SECRET_KEY=leaked-env\n", sentinel: "leaked-env" },

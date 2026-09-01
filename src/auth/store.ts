@@ -259,15 +259,6 @@ export class AuthStore {
   tokenCount(): number {
     return this.tokens.size;
   }
-
-  static deleteStateFile(workspaceId: string): void {
-    const file = path.join(getStateDir(), "auth", `${workspaceId}.json`);
-    try {
-      fs.rmSync(file, { force: true });
-    } catch {
-      // ignore
-    }
-  }
 }
 
 export function filterScopes(requested: string | undefined): string[] {

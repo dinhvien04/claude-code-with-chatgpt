@@ -1,112 +1,125 @@
-# Troubleshooting
+# Troubleshooting & Diagnostics
 
-First move, always:
+> **First Step**: Always run the automated self-diagnostic tool first:
+> ```bash
+> c2c doctor
+> ```
+> `c2c doctor` automatically inspects Node.js, the local workspace, bridge daemon status, MCP endpoint availability, OAuth state, and Cloudflare tunnel connectivity, auto-repairing transient faults whenever possible.
 
-```
-c2c doctor
-```
+---
 
-It checks Node, workspace, bridge, MCP, OAuth and tunnel — and repairs what it
-can (restarts the bridge, restarts the tunnel) without asking.
+## 1. Claude Code Specific Diagnostics
 
-## Common situations
+### Skill Not Found / Slash Command `/chatgpt-collab` Unavailable
+- **Symptom**: Claude Code reports that the skill or command `/chatgpt-collab` does not exist.
+- **Cause**: The skill is not installed in the workspace's `.claude/skills/` directory or global `~/.claude/skills/`.
+- **Fix**:
+  1. Ensure the directory `.claude/skills/chatgpt-collab/SKILL.md` exists in your workspace root.
+  2. For global availability across all projects, copy the skill to `~/.claude/skills/chatgpt-collab/SKILL.md` (`%USERPROFILE%\.claude\skills\chatgpt-collab\SKILL.md` on Windows).
+  3. Verify that the `name: chatgpt-collab` YAML frontmatter is intact.
 
-### "Bridge 未运行"
-`c2c start` (or let doctor do it). Bridge logs:
-`c2c logs`, or verbose: `c2c logs --verbose`.
+### Permission Prompts on Every `c2c` or `git` Execution
+- **Symptom**: Claude Code repeatedly interrupts execution with permission approval dialogs for `c2c` or test commands.
+- **Cause**: `.claude/settings.json` has not registered permissions for the `c2c` CLI binary and state directory.
+- **Fix**:
+  Run the automatic permission configurator:
+  ```bash
+  c2c config-allow
+  ```
+  This command idempotently updates `.claude/settings.json` (or `~/.claude/settings.json`), adding the necessary CLI execution permissions and allowlisting the application state directory.
 
-If doctor says the bridge state is **uncertain** (无法确认), do not start a
-second bridge and do not Delete the ChatGPT connector. Wait and run doctor
-again. The local process may still be running.
+### Writable Path / Sandbox Permission Denied (EPERM)
+- **Symptom**: Bridge daemon fails to write logs or state files with `EPERM` or `Operation not permitted`.
+- **Cause**: The state directory (`%LOCALAPPDATA%\claude-code-with-chatgpt` on Windows or `~/Library/Application Support/claude-code-with-chatgpt` on macOS) is blocked by Claude Code's sandbox.
+- **Fix**:
+  Run `c2c config-allow` and restart Claude Code. If permissions were set at the user level, ensure your terminal process has standard write access to your OS application data folder.
 
-### Everything was quit and ChatGPT can no longer connect
-Quitting Codex / the terminal stops the public address. The next `c2c doctor`
-starts a new address and sets `chatgptRepair.needed`. The Skill should tell the
-user that the old address expired, then **Delete** THIS workspace's
-connector (`chatgptRepair.connectorName`) and create it again with the new
-address (never click Reconnect — the old URL is dead). Other workspaces keep
-their own connectors so two projects can stay connected at once.
+---
 
-Fixed ChatGPT pages for first-time setup and later repair (do not hunt the UI):
+## 2. Connectivity & Tunnel Diagnostics
 
-- Developer mode: https://chatgpt.com/#settings/Security
-- Plugins hub (manage existing connectors): https://chatgpt.com/plugins
-- Add a connector:
-  https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins
+### "Bridge Not Running" / "Bridge 未运行"
+- **Fix**: Run `c2c start` or let `c2c doctor` start the daemon.
+- Inspect detailed logs with:
+  ```bash
+  c2c logs --verbose
+  ```
+- If `c2c doctor` reports the bridge state is **uncertain** (`状态无法确认`), wait 5 seconds and rerun `c2c doctor`. Do not launch multiple competing bridge daemons.
 
-### Tunnel URL unreachable / ChatGPT says the connector is broken
-Same as above: `c2c doctor`, then Delete + recreate THIS workspace's
-connector if `chatgptRepair.needed`. Fresh pairing code: `c2c pair`.
-If this workspace uses a stable hostname, doctor sets `namedRepair` instead —
-re-login to Cloudflare (`c2c tunnel login`) and doctor again. Do not Delete
-the connector; the address did not change.
+### Cloudflare Tunnel Unreachable / ChatGPT Reports Connector Broken
+- **Symptom**: ChatGPT displays an error that the MCP connector cannot reach the server URL.
+- **Cause**: Quitting the terminal or restarting the computer terminates the temporary Quick Tunnel (`*.trycloudflare.com`).
+- **Fix**:
+  1. Run `c2c doctor`. If the public URL has changed, doctor flags `chatgptRepair.needed: true`.
+  2. Open ChatGPT Web -> **Settings** -> **Connectors** (or visit `https://chatgpt.com/plugins`).
+  3. **Delete** the existing connector for this workspace (do not click *Reconnect* — the old URL is permanently dead).
+  4. Click **Create Connector** and paste the new `https://...trycloudflare.com/mcp` URL provided by `c2c doctor`.
+  5. Run `c2c pair` to generate a fresh pairing code, then click **Connect / Authorize**.
 
-### I have a Cloudflare domain and want a stable hostname
-During first-time setup (or the next coding session, once), say you have a
-Cloudflare account and give the domain. Codex opens a browser for Cloudflare
-login, then keeps `c2c-<project>.your-domain.com`. To stay on the temporary
-address, say you do not have a domain. Switching later: tell Codex you want
-the stable hostname; it runs `c2c tunnel choose --mode named --zone <domain>`.
+### Stable Hostnames (Named Cloudflare Tunnels)
+- If you own a domain configured on Cloudflare, you can avoid rotating connector URLs:
+  ```bash
+  c2c tunnel choose --mode named --zone your-domain.com
+  ```
+- This binds a persistent URL (e.g. `https://c2c-myproject.your-domain.com/mcp`) that survives reboots and daemon restarts. If a named tunnel disconnects, run `c2c tunnel login` to refresh Cloudflare credentials without having to re-create the connector in ChatGPT.
 
-### "配对码无效/过期"
-Pairing codes are one-time and expire after ~5 minutes:
+### `cloudflared` Executable Missing
+- **macOS**: `brew install cloudflared`
+- **Windows**: `winget install Cloudflare.cloudflared`
+- **Linux**: Install via official Cloudflare package repositories (`apt-get install cloudflared` / `dnf install cloudflared`).
+- *Custom Path*: If installed in a non-standard location, set the environment variable `C2C_CLOUDFLARED_PATH` to the absolute binary path.
 
-```
-c2c pair
-```
+---
 
-generates a fresh one (older codes become invalid immediately).
+## 3. Authentication & Pairing Code Issues
 
-### ChatGPT gets 401 on every tool call
-The access token expired and refresh failed (e.g. after `c2c unpair` or a
-long offline period). Delete THIS workspace's connector if the address also
-changed; otherwise run Authorize again in ChatGPT and enter a fresh pairing
-code. Never use Reconnect when the public address has been replaced.
+### "Pairing Code Invalid or Expired" / "配对码无效或过期"
+- **Cause**: Pairing codes have a 5-minute time-to-live (TTL), allow at most 5 attempts, and are invalidated immediately upon use.
+- **Fix**:
+  Generate a fresh code by running:
+  ```bash
+  c2c pair
+  ```
+  Enter the new 8-character code in the browser authorization window immediately.
 
-### cloudflared is not installed
-macOS: `brew install cloudflared`
-Windows: `winget install Cloudflare.cloudflared`
-Linux: see Cloudflare's package instructions.
-The Skill installs this automatically during setup.
-If cloudflared is installed in a custom location that is not on `PATH`, set
-`C2C_CLOUDFLARED_PATH` to the executable's absolute path before running `c2c`.
+### ChatGPT Gets `401 Unauthorized` on Every MCP Tool Call
+- **Cause**: The OAuth access token expired and the refresh token was revoked (e.g. after running `c2c unpair` or extended offline periods).
+- **Fix**:
+  1. In ChatGPT Web -> **Settings** -> **Connectors**, select the connector.
+  2. Run `c2c pair` in the terminal to obtain a fresh pairing code.
+  3. Click **Authorize** in ChatGPT Web and enter the code.
 
-### Every new Codex chat “repairs” the connection / cannot write logs
-The C2C state directory lives outside the project (macOS:
-`~/Library/Application Support/codex-with-chatgpt`; Windows:
-`%LOCALAPPDATA%\codex-with-chatgpt`). Codex's default sandbox cannot write
-there, so each new chat looks like a health-check failure.
+### Port Conflict (Port 48765 Occupied)
+- **Behavior**: The C2C bridge detects port collisions automatically. If the occupying process is a healthy C2C daemon for the same workspace, it is reused. If occupied by another program, the bridge automatically selects an ephemeral loopback port.
+- Configuration and port resolution are handled transparently via local state files without requiring manual port reassignment.
 
-`c2c setup`, `c2c doctor` and `c2c sandbox-allow` add that directory to
-`[sandbox_workspace_write].writable_roots` in `~/.codex/config.toml`
-(`%USERPROFILE%\.codex\config.toml` on Windows). After that, later chats
-do not need elevation.
+---
 
-### Port already in use
-Handled automatically: an existing healthy bridge for the same workspace is
-reused; anything else makes the bridge pick a free port. Configuration follows
-automatically.
+## 4. Workspace & Security Policy Diagnostics
 
-### Reading a file returns ACCESS_DENIED_SENSITIVE_FILE
-Working as intended: `.env`, keys, credentials and anything matched by
-`.c2cignore` are never readable through ChatGPT. `.env.example` is allowed.
+### File Read Returns `ACCESS_DENIED_SENSITIVE_FILE`
+- **Behavior**: Working as intended by design. Sensitive files (`.env`, private keys, cloud credentials, `.git/` metadata) are strictly blocked from MCP reads.
+- **Note**: `.env.example` is explicitly permitted for architectural review.
+- Custom exclusion rules can be added to your project's `.c2cignore` file.
 
-### I cannot see Projects in the ChatGPT sidebar
-Hover **Chats** /「聊天」, click the … that appears, and choose
-**Organize by project** /「按项目整理」. Then create a project named after
-this workspace, with **project-only memory**. Tell Codex「好了」when the
-collection page is open (`https://chatgpt.com/g/g-p-…/project`).
+### ChatGPT Projects Sidebar Not Visible
+- In ChatGPT Web, hover over **Chats** in the left sidebar, click the `…` (three dots) menu, and select **Organize by project**.
+- Create a project named after your workspace with **Project-only memory** enabled, and bind the workspace connector.
 
-### This workspace opened the wrong ChatGPT Project
-Do not pick another project by name automatically. Open the collection that
-matches this workspace and tell Codex「已找到」, or say you want the old
-long-chat instead. Each workspace has its own Project and its own connector.
+---
 
-### Completely stuck
-```
+## 5. Complete Reset Procedure
+
+If the bridge or pairing state enters an unrecoverable state:
+```bash
+# 1. Stop all daemons and tunnels
 c2c stop
-c2c setup
-```
 
-re-creates the bridge, tunnel and pairing session from scratch. Existing
-authorizations stay valid unless you also ran `c2c unpair`.
+# 2. Revoke all active OAuth tokens
+c2c unpair
+
+# 3. Restart the bridge and generate a fresh pairing session
+c2c setup
+
+# 4. Update the connector in ChatGPT Web with the new URL and pairing code
+```

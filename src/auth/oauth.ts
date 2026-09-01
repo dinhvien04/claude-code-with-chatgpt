@@ -134,6 +134,8 @@ function pairingPage(opts: {
 </html>`;
 }
 
+const MAX_PENDING_REQUESTS = 1000;
+
 export function createOAuthRouter(deps: OAuthDeps): Router {
   const router = Router();
   const pendingRequests = new Map<string, PendingAuthRequest>();
@@ -142,6 +144,16 @@ export function createOAuthRouter(deps: OAuthDeps): Router {
     const now = Date.now();
     for (const [id, request] of pendingRequests) {
       if (now > request.expiresAt) pendingRequests.delete(id);
+    }
+    if (pendingRequests.size > MAX_PENDING_REQUESTS) {
+      // Evict oldest entries if map exceeds maximum capacity
+      const excess = pendingRequests.size - MAX_PENDING_REQUESTS;
+      let removed = 0;
+      for (const id of pendingRequests.keys()) {
+        pendingRequests.delete(id);
+        removed++;
+        if (removed >= excess) break;
+      }
     }
   };
 

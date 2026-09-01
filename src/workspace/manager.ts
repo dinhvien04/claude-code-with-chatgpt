@@ -131,6 +131,25 @@ export class Workspace {
     p = p.replace(/^workspace:\/*/i, "");
     if (p === "") p = ".";
 
+    // Reject NTFS Alternate Data Streams (::$DATA, :stream) and invalid colons
+    if (/^[a-zA-Z]:\//.test(p)) {
+      if (p.slice(2).includes(":")) {
+        throw new WorkspaceError("INVALID_PATH", "Invalid path: alternate data streams and colon-delimited paths are forbidden");
+      }
+    } else if (p.includes(":")) {
+      throw new WorkspaceError("INVALID_PATH", "Invalid path: alternate data streams and colon-delimited paths are forbidden");
+    }
+
+    // Reject path segments ending with trailing dots or spaces
+    const segments = p.split("/");
+    for (const seg of segments) {
+      if (seg !== "." && seg !== ".." && seg !== "") {
+        if (seg.endsWith(".") || seg.endsWith(" ")) {
+          throw new WorkspaceError("INVALID_PATH", "Invalid path: trailing dots and spaces in path segments are forbidden");
+        }
+      }
+    }
+
     const abs = path.resolve(this.root, p);
     const canonical = this.canonicalize(abs);
     if (!this.contains(canonical)) {
