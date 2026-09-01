@@ -183,7 +183,7 @@ c2c stop            # Stop the background daemon and tunnel
 c2c logs            # View bridge and access logs (--verbose for debug)
 
 # Configuration & Permissions
-c2c config-allow    # Configure .claude/settings.json permissions & writable paths
+c2c config-allow    # Configure .claude/settings.local.json permissions & sandbox write paths
 c2c session         # View or manage active task checkpoints
 c2c record          # Manually log execution iterations and test outcomes
 ```

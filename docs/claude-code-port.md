@@ -56,9 +56,10 @@ However, the original upstream implementation was tightly coupled to OpenAI's **
 
 ### 3.2 Configuration & Permission Management
 - **Codex Mechanism**: The bridge manipulated `~/.codex/config.toml` directly using TOML string manipulation to insert `[sandbox_workspace_write].writable_roots`.
-- **Claude Code Mechanism**: We introduced `src/config/sandbox-allow.ts` / `c2c config-allow`, which operates on Claude Code's standard `.claude/settings.json` and `~/.claude/settings.json`. It merges:
-  - `permissions.allow`: Pre-approves `c2c`, `git`, and build tool commands.
-  - `permissions.additionalDirectories` & `sandbox.filesystem.allowWrite`: Allowlisting `%LOCALAPPDATA%\claude-code-with-chatgpt` (Windows) and `~/Library/Application Support/claude-code-with-chatgpt` (macOS).
+- **Claude Code Mechanism**: We introduced `src/config/claude-settings.ts` / `c2c config-allow`, which operates on Claude Code's standard `.claude/settings.local.json` (workspace) and `~/.claude/settings.json` (global). It merges:
+  - `permissions.allow`: Pre-approves scoped `c2c` subcommands (`setup*`, `doctor*`, `status*`, `pair*`, `session*`, `record*`, etc.), excluding legacy commands.
+  - `sandbox.filesystem.allowWrite`: Allowlisting `%LOCALAPPDATA%\claude-code-with-chatgpt` (Windows) and `~/Library/Application Support/claude-code-with-chatgpt` (macOS).
+  - Preserves all unrelated user configuration, operates atomically, and fails closed without overwriting malformed JSON files.
 
 ### 3.3 Protocol Generalization
 - All protocol wire states (`INIT`, `PLAN`, `EXECUTING`, `EXECUTED`, `REVIEW`, `DONE`, `BLOCKED`, `ERROR`, `HANDOFF`) were generalized to include the `EXECUTOR: "claude-code"` header.

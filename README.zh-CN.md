@@ -167,7 +167,7 @@ c2c stop            # 停止后台 Bridge 守护进程与隧道
 c2c logs            # 查看运行日志（添加 --verbose 查看详细输出）
 
 # 配置与执行记录
-c2c config-allow    # 自动将所需权限与路径写入 .claude/settings.json
+c2c config-allow    # 自动将所需权限与沙箱写入路径写入 .claude/settings.local.json
 c2c session         # 查看或管理当前任务断点状态
 c2c record          # 记录本地执行与测试结果供 ChatGPT 审查
 ```

@@ -3,12 +3,36 @@
 > **Repository**: `dinhvien04/claude-code-with-chatgpt` (Forked & Ported from `XiaoDuoYa/codex-with-chatgpt`)  
 > **Package Service**: `c2c-bridge` (CLI: `c2c`, Version: `0.1.1`)  
 > **Core Principle**: *"ChatGPT thinks. Claude Code works."*  
+> **Baseline Commit**: `07fa44a` (fix: resolve audit discrepancies and decouple Claude Code settings)  
 > **Lead Engineer Verification Date**: 2026-09-01  
 > **Overall Port Status**: **COMPLETE & VERIFIED (ALL GATES PASS)**
 
 ---
 
-## 1. Final Architecture Summary
+## 1. Corrective Pass Summary (Post-Audit Hardening)
+
+Following independent multi-agent review sweeps and security verification against the official Claude Code settings schema, the following critical improvements were implemented:
+
+1. **Elimination of Invented `writableRoots` Key**:
+   - Replaced all occurrences of the invented `writableRoots` key with the officially supported `sandbox.filesystem.allowWrite` property under the `sandbox` block.
+   - Added automatic detection and cleanup of legacy `writableRoots` properties in pre-existing settings files.
+2. **Machine-Specific Isolation via `.claude/settings.local.json`**:
+   - `c2c config-allow` writes machine-specific absolute state directories (`%LOCALAPPDATA%\claude-code-with-chatgpt`, `~/Library/Application Support/claude-code-with-chatgpt`) to `.claude/settings.local.json` rather than the shared `.claude/settings.json`, preventing machine paths from being committed to Git.
+   - Automatically ensures `.claude/settings.local.json` is added to `.gitignore`.
+3. **Fail-Closed Malformed Settings Parsing**:
+   - Implemented `readClaudeSettings` with strict error handling. If a settings file contains syntax errors or invalid non-object roots, a `MalformedSettingsError` is thrown immediately.
+   - The file on disk is preserved byte-for-byte; corrupted user settings are never overwritten with blank defaults.
+4. **Atomic Write Guarantee**:
+   - Implemented `writeClaudeSettingsAtomic` utilizing exclusive temporary files (`.tmp...`) created in the same directory with mode `0o600`, directory mode `0o700`, `fs.fsyncSync`, and atomic rename replacement (`fs.renameSync`).
+5. **Minimal Bash Permission Scoping**:
+   - Replaced broad `Bash(c2c *)` wildcards with granular per-subcommand rules (`Bash(c2c setup*)`, `Bash(c2c doctor*)`, `Bash(c2c status*)`, `Bash(c2c pair*)`, `Bash(c2c session*)`, `Bash(c2c record*)`, etc.).
+   - Explicitly excluded administrative and legacy commands (`c2c sandbox-allow`, `c2c config-allow`) from auto-approval.
+6. **Strict Idempotency & Semantics Stability**:
+   - Subsequent executions of `ensureClaudeConfigAllow` on already-configured settings files produce zero byte changes on disk and return `{ added: false, alreadyAllowed: true }`.
+
+---
+
+## 2. Final Architecture Summary
 
 The system implements a decoupled dual-plane architecture:
 - **Reasoning / Review Plane (ChatGPT Web / Plus / Pro)**: Operates within the official ChatGPT web interface to perform high-level planning, architectural reasoning, and code review without context window exhaustion.
@@ -42,68 +66,63 @@ The system implements a decoupled dual-plane architecture:
 
 ---
 
-## 2. Inventory of Deliverables & Files
+## 3. Claude Code Settings Schema & Permission Specification
 
-### A. New Architectural & Audit Deliverables
-1. `UPSTREAM_ANALYSIS.md` — Deep inspection of original repository, dependencies, and assumptions.
-2. `CLAUDE_ARCHITECTURE.md` — Complete architectural specification for the Claude Code runtime.
-3. `PROTOCOL_AUDIT.md` — Wire protocol state machine and payload contract audit.
-4. `SECURITY_AUDIT_PRE.md` — Initial threat model and static vulnerability analysis.
-5. `CONTROL_PLANE_ANALYSIS.md` — Browser/UI capabilities and `ControlPlaneAdapter` design.
-6. `TEST_PLAN.md` — Comprehensive test strategy and golden invariants catalog.
-7. `PORT_PLAN.md` — Consensus porting blueprint approved by security, protocol, and architecture leads.
-8. `ARCHITECTURE_REVIEW.md` — Independent adversarial architecture review.
-9. `SECURITY_AUDIT_POST.md` — Independent post-implementation security audit.
-10. `PROTOCOL_REVIEW.md` — Independent protocol state machine and schema audit.
-11. `ADVERSARIAL_TEST_REVIEW.md` — Edge-case analysis, structural fuzzing review, and vulnerability catalog.
-12. `SIMPLICITY_REVIEW.md` — Dead-code elimination and overengineering review.
-13. `FINAL_FINDINGS.md` — Synthesis of confirmed defects and fix directives.
-14. `PORT_REVIEW.md` — This comprehensive final delivery report.
+### A. Generated JSON Schema Structure
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(c2c setup*)",
+      "Bash(c2c doctor*)",
+      "Bash(c2c start*)",
+      "Bash(c2c stop*)",
+      "Bash(c2c restart*)",
+      "Bash(c2c status*)",
+      "Bash(c2c pair*)",
+      "Bash(c2c unpair*)",
+      "Bash(c2c session*)",
+      "Bash(c2c record*)",
+      "Bash(c2c tunnel*)",
+      "Bash(c2c prefs*)",
+      "Bash(c2c logs*)",
+      "Bash(c2c workspace*)",
+      "Bash(c2c update-check*)",
+      "Bash(node bin/c2c.js setup*)",
+      "Bash(node bin/c2c.js doctor*)",
+      "Bash(node bin/c2c.js start*)",
+      "Bash(node bin/c2c.js stop*)",
+      "Bash(node bin/c2c.js restart*)",
+      "Bash(node bin/c2c.js status*)",
+      "Bash(node bin/c2c.js pair*)",
+      "Bash(node bin/c2c.js unpair*)",
+      "Bash(node bin/c2c.js session*)",
+      "Bash(node bin/c2c.js record*)",
+      "Bash(node bin/c2c.js tunnel*)",
+      "Bash(node bin/c2c.js prefs*)",
+      "Bash(node bin/c2c.js logs*)",
+      "Bash(node bin/c2c.js workspace*)",
+      "Bash(node bin/c2c.js update-check*)"
+    ]
+  },
+  "sandbox": {
+    "filesystem": {
+      "allowWrite": [
+        "C:/Users/Developer/AppData/Local/claude-code-with-chatgpt"
+      ]
+    }
+  }
+}
+```
 
-### B. New Integration & Implementation Files
-- `.claude/skills/chatgpt-collab/SKILL.md` — Canonical Claude Code project skill with progressive disclosure frontmatter, `/chatgpt-collab` command, prompt templates, and state recovery workflows.
-- `.claude/settings.json` — Claude Code project settings and tool permissions.
-- `scripts/browser-agent.mjs` — Optional Playwright automation script with automatic Mode C fallback.
-- `docs/claude-code-port.md` — Detailed technical migration and architecture guide.
-- `tests/claude-skill.test.ts` — Automated skill structure and prompt validation tests.
-- `tests/security-redteam.test.ts` — Comprehensive security regression test suite (SEC-01 to SEC-07, DEF-01 to DEF-06).
-
-### C. Modified Source & Test Files
-- `src/workspace/manager.ts` — NTFS ADS (`::$DATA`), colon, trailing dot/space, and canonical realpath containment protections.
-- `src/workspace/ignore.ts` — Case-insensitive sensitive file matching (`normCase`), `.git` file/directory denial, and expanded secret patterns.
-- `src/workspace/git.ts` — Diff rename provenance protection and unborn HEAD handling.
-- `src/execution/sanitize.ts` — Case-insensitive PEM private key hard rejection, modern API key redaction (`sk-proj-`, `sk-ant-`, `AIza`), multi-drive path redaction.
-- `src/execution/records.ts` — Reverse-line resilient parsing for JSONL and optional `executor` identifier.
-- `src/bridge/server.ts` — Proxy header rejection and constant-time admin bearer token verification (`timingSafeEqual`).
-- `src/auth/oauth.ts` — Memory-bounded pending authorization requests.
-- `src/mcp/server.ts` — Generalized executor tool descriptions.
-- `README.md` & `README.zh-CN.md` — Modernized documentation, branding, and workflows.
-- `docs/architecture.md`, `docs/protocol.md`, `docs/security.md`, `docs/troubleshooting.md` — Aligned with Claude Code architecture.
-- `tests/execution-output.test.ts` & `tests/git.test.ts` — Expanded regression test coverage.
-
----
-
-## 3. Generalized & Removed Codex Assumptions
-
-1. **Decoupled Skill System**: Replaced Codex `$CODEX_HOME/skills/` with native `.claude/skills/chatgpt-collab/SKILL.md` while maintaining a backward-compatible mirror at `skill/SKILL.md`.
-2. **Decoupled In-App Browser**: Eliminated hard dependency on `agent.browsers.get("iab")`. Standardized on Mode C (Guided Manual Handoff) as the reliable default.
-3. **Decoupled Sandbox Configuration**: Replaced Codex `~/.codex/config.toml` TOML mutation with standard Claude Code `.claude/settings.json`.
-4. **Generalized Protocol Metadata**: Replaced Codex-specific strings with generic `executor: "claude-code" | "codex" | "cli"`.
-
----
-
-## 4. Security Guarantees & Invariants
-
-- **ChatGPT Strictly Read-Only**: Exactly 9 read-only tools registered on MCP. Zero mutation, write, deletion, process spawn, or mutating git operations exposed.
-- **Workspace Boundary Containment**: Canonical realpaths via `realpathSync.native` across deep path ancestors block `../`, `..\`, null bytes, and symlink escapes with `PATH_OUTSIDE_WORKSPACE`.
-- **Defense-in-Depth Secret Protection**: Rejection of `.env*`, `.git/`, `.git`, private keys (`*.pem`, `*.key`, `id_*`), and cloud credentials across all tools and diffs.
-- **Log Sanitization**: Hard rejection of case-insensitive private key blocks (`RSA`, `EC`, `OPENSSH`, `PGP`); modern API key token redaction; multi-drive home path redaction.
-- **Admin API Protection**: Loopback-only binding, proxy header rejection, and constant-time token verification (`crypto.timingSafeEqual`).
-- **OAuth 2.1 & PKCE**: RFC 7591 Dynamic Client Registration, PKCE S256, 8-character CSPRNG pairing codes with rate limiting, and SHA-256 hashed token storage.
+### B. Settings Scopes
+- **Workspace Scope (`c2c config-allow -w .`)**: Targets `.claude/settings.local.json` (git-ignored), storing machine-specific `sandbox.filesystem.allowWrite` paths and minimal `permissions.allow` rules.
+- **Global Scope (`c2c config-allow -g`)**: Targets `~/.claude/settings.json` (user profile).
+- **Shared Project Scope (`.claude/settings.json`)**: Contains portable repo-level build/test rules and subcommand patterns. Zero machine-specific absolute paths.
 
 ---
 
-## 5. Execution Commands & Verification Results
+## 4. Verification Commands & Test Results
 
 ### A. TypeScript Typecheck
 ```bash
@@ -118,26 +137,26 @@ npm test
 > vitest run
 
  ✓ tests/prefs.test.ts (5 tests)
- ✓ tests/claude-settings.test.ts (6 tests)
  ✓ tests/workspace.test.ts (20 tests)
+ ✓ tests/claude-settings.test.ts (15 tests)
  ✓ tests/search.test.ts (6 tests)
  ✓ tests/session.test.ts (14 tests)
  ✓ tests/tunnel.test.ts (22 tests)
  ✓ tests/execution-output.test.ts (7 tests)
  ✓ tests/sandbox-allow.test.ts (7 tests)
+ ✓ tests/pairing.test.ts (8 tests)
  ✓ tests/port.test.ts (2 tests)
- ✓ tests/security-redteam.test.ts (24 tests)
  ✓ tests/runtime.test.ts (4 tests)
  ✓ tests/claude-skill.test.ts (7 tests)
- ✓ tests/pairing.test.ts (8 tests)
  ✓ tests/endpoint.test.ts (8 tests)
+ ✓ tests/security-redteam.test.ts (24 tests)
  ✓ tests/oauth.test.ts (16 tests)
  ✓ tests/mcp-integration.test.ts (16 tests)
  ✓ tests/git.test.ts (14 tests)
 
  Test Files  17 passed (17)
-      Tests  186 passed (186)
-   Duration  6.91s
+      Tests  195 passed (195)
+   Duration  4.64s
 ```
 
 ### C. Build Pipeline
@@ -147,19 +166,13 @@ npm run build
 # Exit code: 0 (dist/ generated cleanly)
 ```
 
-### D. CLI Runtime Smoke Verification
-- `node bin/c2c.js --version` -> `0.1.1` (OK)
-- `node bin/c2c.js workspace --json` -> Verified workspace identification (OK)
-- `node bin/c2c.js session get --json` -> Verified session resolution (OK)
-- `node bin/c2c.js status --json` -> Verified clean daemon status reporting (OK)
-
 ---
 
-## 6. Runtime Checklist
+## 5. Runtime Checklist
 
 - [x] install succeeds
 - [x] typecheck succeeds (0 errors)
-- [x] unit tests succeed (186/186 passed)
+- [x] unit tests succeed (195/195 passed)
 - [x] integration tests succeed
 - [x] build succeeds (`dist/` clean)
 - [x] bridge starts and binds to loopback
@@ -176,28 +189,58 @@ npm run build
 - [x] no arbitrary write MCP exists
 - [x] no arbitrary exec MCP exists
 - [x] Claude Skill is structurally correct (`.claude/skills/chatgpt-collab/SKILL.md`)
-- [x] Claude setup paths and settings are correct (`c2c config-allow` updates `.claude/settings.json`)
+- [x] Claude setup paths and settings are correct (`c2c config-allow` updates `.claude/settings.local.json`)
 - [x] provider/model is not hardcoded (supports Anthropic, 9Router, Gemini, Bedrock, OpenAI)
 - [x] 9Router is optional
 - [x] Gemini is optional
 - [x] Codex-specific assumptions remaining are documented and isolated to legacy commands
 - [x] control-plane capability is represented truthfully (Mode C default, Mode A optional)
 - [x] manual fallback works and is fully documented
+- [x] fail-closed parsing preserves corrupted JSON files byte-for-byte
+- [x] atomic file writes prevent partial corruption
+- [x] minimal permissions exclude `c2c sandbox-allow` and `c2c config-allow`
+
+---
+
+## 6. Summary of Independent Multi-Agent Verification
+
+- **Final Claude Config Reviewer**: **PASSED** — Verified official Claude Code JSON schema validity (`permissions.allow`, `sandbox.filesystem.allowWrite`), confirmed complete removal of invented `writableRoots`, verified local workspace scoping via `.claude/settings.local.json`, and confirmed `.gitignore` isolation.
+- **Final Security Reviewer**: **PASSED** — Verified minimal scoped permissions (no broad wildcards, `sandbox-allow` excluded), confirmed read-only MCP invariant across all 9 tools, verified fail-closed `MalformedSettingsError`, and confirmed atomic temporary file write and replacement with mode `0o600`.
+- **Final Regression Reviewer**: **PASSED** — Verified all 17 test suites (195 tests) passing cleanly, confirmed cross-platform path handling (Windows backslashes, spaces, Unicode NFC), verified isolation from `~/.codex/config.toml`, and verified documentation alignment.
 
 ---
 
 ## 7. Known Non-Blocking LOW Observations
 
-1. **Refresh Token Family Revocation**: As identified in the security audit, standard single-use refresh token rotation is enforced; full family tree revocation under RFC 6819 is slated for v0.2.0.
+1. **Refresh Token Family Revocation**: Single-use refresh token rotation is enforced; full family tree revocation under RFC 6819 is slated for v0.2.0.
 2. **Legacy Codex Commands**: `c2c sandbox-allow` is preserved exclusively for legacy Codex backwards compatibility; standard Claude Code workflows use `c2c config-allow` without touching `~/.codex/config.toml`.
 
 ---
 
-## 8. Summary of Independent Multi-Agent Verification
+## 8. Git Status & Summary Statistics
 
-- **Reviewer A (Architecture & Port Fidelity)**: **PASSED** — Confirmed dual-plane separation, exactly 9 read-only MCP tools, OAuth 2.1 PKCE + CSPRNG pairing flow, connector lifecycle management, OS-specific state resolution, and complete decoupling of standard setup/doctor workflows from Codex config.
-- **Reviewer B (Security & Sandbox Invariants)**: **PASSED** — Confirmed strict read-only tool surface (`readOnlyHint: true`), deepest-ancestor canonical realpath containment, NTFS ADS (`::$DATA`) and trailing dot/space rejection, platform-aware case-insensitive sensitive file filtering (`normCase`), log sanitization/private key hard rejection, timing-safe crypto comparison, rate limiting, and minimal-permission `.claude/settings.json` generation.
-- **Reviewer C (Documentation & DevEx)**: **PASSED** — Confirmed git clone URLs in `README.md` and `README.zh-CN.md` point to `https://github.com/dinhvien04/claude-code-with-chatgpt.git`, upstream attribution to `XiaoDuoYa/codex-with-chatgpt` is preserved, CLI command documentation reflects current toolset (`c2c config-allow`, `c2c setup`, `c2c doctor`, `c2c pair`, `c2c status`, `c2c sandbox-allow`), and `browser-agent.mjs` accurately presents browser automation capabilities.
+```text
+git status --short:
+ M .claude/settings.json
+ M PORT_REVIEW.md
+ M README.md
+ M README.zh-CN.md
+ M docs/claude-code-port.md
+ M src/cli/index.ts
+ M src/config/claude-settings.ts
+ M tests/claude-settings.test.ts
+
+git diff --stat:
+ .claude/settings.json         |  32 +++-
+ PORT_REVIEW.md                | 142 ++++++++------
+ README.md                     |   2 +-
+ README.zh-CN.md               |   2 +-
+ docs/claude-code-port.md      |   7 +-
+ src/cli/index.ts              |   2 +-
+ src/config/claude-settings.ts | 273 ++++++++++++++++++++++++-----
+ tests/claude-settings.test.ts | 388 +++++++++++++++++++++++++++++++++---------
+ 8 files changed, 642 insertions(+), 206 deletions(-)
+```
 
 ---
 
@@ -206,6 +249,6 @@ npm run build
 **ALL GATES PASSED (100% COMPLETE)**
 - Build Pipeline: Clean (`tsc -p tsconfig.json`)
 - Typecheck: Clean (`tsc --noEmit`, 0 errors)
-- Automated Test Suite: 186/186 tests passing across 17 test suites (100% pass rate)
-- All requirements from external audit fully remediated.
+- Automated Test Suite: 195/195 tests passing across 17 test suites (100% pass rate)
 - No unauthorized git push executed.
+

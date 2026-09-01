@@ -747,7 +747,7 @@ program
 
 program
   .command("config-allow")
-  .description("Configure .claude/settings.json permissions and writable paths")
+  .description("Configure .claude/settings.local.json permissions and sandbox write paths")
   .option("-w, --workspace <path>")
   .option("-g, --global", "apply to global ~/.claude/settings.json instead of workspace", false)
   .option("--json", "machine-readable output", false)
