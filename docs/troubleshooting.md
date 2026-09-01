@@ -51,10 +51,19 @@
 - **Cause**: Quitting the terminal or restarting the computer terminates the temporary Quick Tunnel (`*.trycloudflare.com`).
 - **Fix**:
   1. Run `c2c doctor`. If the public URL has changed, doctor flags `chatgptRepair.needed: true`.
-  2. Open ChatGPT Web -> **Settings** -> **Connectors** (or visit `https://chatgpt.com/plugins`).
+  2. Open ChatGPT Web -> **Settings** -> **Apps** (or **Developer Mode**).
   3. **Delete** the existing connector for this workspace (do not click *Reconnect* — the old URL is permanently dead).
-  4. Click **Create Connector** and paste the new `https://...trycloudflare.com/mcp` URL provided by `c2c doctor`.
+  4. Click **Add Custom App / Connector** and paste the new `https://...trycloudflare.com/mcp` URL provided by `c2c doctor`.
   5. Run `c2c pair` to generate a fresh pairing code, then click **Connect / Authorize**.
+
+### ChatGPT Plus Users / No Custom MCP Connector Option Available
+- **Symptom**: In ChatGPT Web Settings, there is no option to create custom connectors or connect custom MCP server URLs.
+- **Cause**: OpenAI currently gates custom MCP Developer Mode connectors to **ChatGPT Pro, Team, Enterprise, Edu, and Business** plans. ChatGPT Plus ($20/mo) does not support custom MCP connectors.
+- **Fix**:
+  Use **Mode P (Plus Manual Context Handoff)**:
+  1. In Claude Code CLI, run `/chatgpt-collab` using Mode P templates.
+  2. Claude Code will format bounded, privacy-sanitized workspace trees and diffs (`[C2C] STATE: INIT_P`, `STATE: EXECUTED_P`).
+  3. Paste the prompt bundle into your ChatGPT Plus chat. ChatGPT Plus will review the context and reply with `[C2C] STATE: PLAN`.
 
 ### Stable Hostnames (Named Cloudflare Tunnels)
 - If you own a domain configured on Cloudflare, you can avoid rotating connector URLs:
@@ -85,7 +94,7 @@
 ### ChatGPT Gets `401 Unauthorized` on Every MCP Tool Call
 - **Cause**: The OAuth access token expired and the refresh token was revoked (e.g. after running `c2c unpair` or extended offline periods).
 - **Fix**:
-  1. In ChatGPT Web -> **Settings** -> **Connectors**, select the connector.
+  1. In ChatGPT Web -> **Settings** -> **Apps** (or **Developer Mode**), select the connector.
   2. Run `c2c pair` in the terminal to obtain a fresh pairing code.
   3. Click **Authorize** in ChatGPT Web and enter the code.
 

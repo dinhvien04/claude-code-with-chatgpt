@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
 import {
   ensureClaudeConfigAllow,
   getClaudeSettingsPath,
@@ -10,7 +11,7 @@ import {
   MalformedSettingsError,
   REQUIRED_PERMISSIONS,
   REQUIRED_C2C_SUBCOMMANDS,
-  findGitDir,
+  getGitExcludePath,
   ensureIgnoreLocalSettings,
   isCaseInsensitive,
   normPath,
@@ -78,7 +79,7 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
     });
   });
 
-  describe("Workspace Scoping & Git Exclusion Management", () => {
+  describe("Workspace Scoping & Git Worktree Ignore Management", () => {
     it("writes machine-specific paths to settings.local.json by default for workspace scope", () => {
       const defaultLocalPath = getClaudeSettingsPath(tmpDir, false, true);
       expect(defaultLocalPath).toContain("settings.local.json");
@@ -105,46 +106,62 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
       expect(fs.existsSync(globalConfigPath)).toBe(true);
     });
 
-    it("uses .git/info/exclude in standard git repositories without dirtying .gitignore", () => {
-      const gitDir = path.join(tmpDir, ".git");
-      fs.mkdirSync(gitDir, { recursive: true });
+    it("uses git rev-parse --git-path info/exclude in real git repos and verifies git check-ignore", () => {
+      const mainRepo = path.join(tmpDir, "real-git-repo");
+      fs.mkdirSync(mainRepo, { recursive: true });
+      execFileSync("git", ["init"], { cwd: mainRepo, stdio: "ignore" });
+      execFileSync("git", ["config", "user.name", "Test User"], { cwd: mainRepo, stdio: "ignore" });
+      execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: mainRepo, stdio: "ignore" });
+      fs.writeFileSync(path.join(mainRepo, "README.md"), "# Real Repo\n", "utf8");
+      execFileSync("git", ["add", "README.md"], { cwd: mainRepo, stdio: "ignore" });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: mainRepo, stdio: "ignore" });
 
-      ensureIgnoreLocalSettings(tmpDir);
+      ensureIgnoreLocalSettings(mainRepo);
 
-      const excludePath = path.join(gitDir, "info", "exclude");
-      expect(fs.existsSync(excludePath)).toBe(true);
-      const content = fs.readFileSync(excludePath, "utf8");
-      expect(content).toContain(".claude/settings.local.json");
+      // Verify git check-ignore succeeds on settings.local.json
+      const ignored = execFileSync("git", ["check-ignore", ".claude/settings.local.json"], {
+        cwd: mainRepo,
+        encoding: "utf8",
+      }).trim();
+      expect(ignored).toContain(".claude/settings.local.json");
 
-      // Verify .gitignore in root was NOT created or dirtied
-      expect(fs.existsSync(path.join(tmpDir, ".gitignore"))).toBe(false);
+      // Verify .gitignore was NOT created/dirtied
+      expect(fs.existsSync(path.join(mainRepo, ".gitignore"))).toBe(false);
     });
 
-    it("resolves git worktrees with gitdir: file pointer and updates real .git/info/exclude", () => {
-      const mainGitDir = path.join(tmpDir, "main-repo", ".git", "worktrees", "feature-wt");
-      fs.mkdirSync(mainGitDir, { recursive: true });
+    it("resolves real git worktree and verifies git check-ignore in worktree without dirtying .gitignore", () => {
+      const mainRepo = path.join(tmpDir, "main-wt-repo");
+      fs.mkdirSync(mainRepo, { recursive: true });
+      execFileSync("git", ["init"], { cwd: mainRepo, stdio: "ignore" });
+      execFileSync("git", ["config", "user.name", "Test User"], { cwd: mainRepo, stdio: "ignore" });
+      execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: mainRepo, stdio: "ignore" });
+      fs.writeFileSync(path.join(mainRepo, "README.md"), "# Main\n", "utf8");
+      execFileSync("git", ["add", "README.md"], { cwd: mainRepo, stdio: "ignore" });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: mainRepo, stdio: "ignore" });
 
-      const worktreeDir = path.join(tmpDir, "worktree-workspace");
-      fs.mkdirSync(worktreeDir, { recursive: true });
-
-      // Create .git pointer file
-      fs.writeFileSync(path.join(worktreeDir, ".git"), `gitdir: ${mainGitDir}\n`, "utf8");
-
-      expect(findGitDir(worktreeDir)).toBe(mainGitDir);
+      const worktreeDir = path.join(tmpDir, "worktree-dir");
+      execFileSync("git", ["worktree", "add", worktreeDir, "-b", "feature-branch"], {
+        cwd: mainRepo,
+        stdio: "ignore",
+      });
 
       ensureIgnoreLocalSettings(worktreeDir);
 
-      const excludePath = path.join(mainGitDir, "info", "exclude");
-      expect(fs.existsSync(excludePath)).toBe(true);
-      const content = fs.readFileSync(excludePath, "utf8");
-      expect(content).toContain(".claude/settings.local.json");
+      // Verify git check-ignore inside the worktree workspace succeeds
+      const ignored = execFileSync("git", ["check-ignore", ".claude/settings.local.json"], {
+        cwd: worktreeDir,
+        encoding: "utf8",
+      }).trim();
+      expect(ignored).toContain(".claude/settings.local.json");
       expect(fs.existsSync(path.join(worktreeDir, ".gitignore"))).toBe(false);
     });
 
     it("safely creates .gitignore in non-git directories", () => {
-      ensureIgnoreLocalSettings(tmpDir);
+      const nonGitDir = path.join(tmpDir, "non-git");
+      fs.mkdirSync(nonGitDir, { recursive: true });
+      ensureIgnoreLocalSettings(nonGitDir);
 
-      const gitignorePath = path.join(tmpDir, ".gitignore");
+      const gitignorePath = path.join(nonGitDir, ".gitignore");
       expect(fs.existsSync(gitignorePath)).toBe(true);
       const content = fs.readFileSync(gitignorePath, "utf8");
       expect(content).toContain(".claude/settings.local.json");
@@ -208,16 +225,16 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
     });
   });
 
-  describe("Minimal Permission Grants & Sensitive Command Exclusion", () => {
+  describe("Minimal Permission Grants & Local Script Exclusion", () => {
     it("uses token-boundary wildcard syntax Bash(c2c <subcommand> *)", () => {
       for (const perm of REQUIRED_PERMISSIONS) {
-        expect(perm).toMatch(/Bash\((c2c|node bin\/c2c\.js) [a-z0-9_-]+ \*\)/);
-        // Ensure no adjacent wildcards like "setup*" without space
-        expect(perm).not.toMatch(/Bash\((c2c|node bin\/c2c\.js) [a-z0-9_-]+\*\)/);
+        expect(perm).toMatch(/^Bash\(c2c [a-z0-9_-]+ \*\)$/);
+        // Ensure NO repository-local node execution permissions
+        expect(perm).not.toContain("node bin/c2c.js");
       }
     });
 
-    it("includes required c2c subcommands but explicitly excludes legacy sandbox-allow, config-allow, and unpair", () => {
+    it("strictly excludes node bin/c2c.js, unpair, sandbox-allow, config-allow, tunnel, prefs, workspace, update-check", () => {
       const configPath = path.join(tmpDir, ".claude", "settings.local.json");
       ensureClaudeConfigAllow({
         workspaceRoot: tmpDir,
@@ -233,13 +250,23 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
       expect(allow).toContain("Bash(c2c pair *)");
       expect(allow).toContain("Bash(c2c session *)");
       expect(allow).toContain("Bash(c2c record *)");
+      expect(allow).toContain("Bash(c2c logs *)");
 
-      // Verify sensitive and admin commands are NOT auto-approved
+      // Security Invariant: NO repository-local node script auto-approvals
+      expect(allow.some((p) => p.includes("bin/c2c.js"))).toBe(false);
+      expect(allow.some((p) => p.includes("node bin/c2c.js"))).toBe(false);
+
+      // Sensitive / Admin exclusions
       expect(allow.some((p) => p.includes("unpair"))).toBe(false);
       expect(allow.some((p) => p.includes("sandbox-allow"))).toBe(false);
       expect(allow.some((p) => p.includes("config-allow"))).toBe(false);
+      expect(allow.some((p) => p.includes("tunnel"))).toBe(false);
+      expect(allow.some((p) => p.includes("prefs"))).toBe(false);
+      expect(allow.some((p) => p.includes("workspace"))).toBe(false);
+      expect(allow.some((p) => p.includes("update-check"))).toBe(false);
+      expect(allow.some((p) => p.includes("stop"))).toBe(false);
+      expect(allow.some((p) => p.includes("restart"))).toBe(false);
       expect(allow.includes("Bash(c2c *)")).toBe(false);
-      expect(allow.includes("Bash(c2c setup*)")).toBe(false);
     });
   });
 
@@ -368,11 +395,12 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
 
     it("accurately reports case sensitivity rules based on platform", () => {
       expect(isCaseInsensitive("win32")).toBe(true);
-      expect(isCaseInsensitive("darwin")).toBe(true);
+      expect(isCaseInsensitive("darwin")).toBe(false); // Darwin not assumed universally case-insensitive
       expect(isCaseInsensitive("linux")).toBe(false);
       expect(isCaseInsensitive("openbsd")).toBe(false);
 
       expect(normPath("/Path/To/State", "linux")).toBe("/Path/To/State");
+      expect(normPath("/Path/To/State", "darwin")).toBe("/Path/To/State");
       expect(normPath("/Path/To/State", "win32")).toBe("/path/to/state");
     });
   });

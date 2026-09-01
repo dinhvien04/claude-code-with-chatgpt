@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { getStateDir } from "./paths.js";
 
@@ -43,34 +44,32 @@ export interface ClaudeSettings {
 }
 
 /**
- * Normal Claude Code required permissions.
- * Explicitly excludes legacy and admin commands (e.g. `c2c sandbox-allow` and `c2c config-allow`)
- * as well as sensitive token-revocation commands (e.g. `c2c unpair`).
+ * Minimal Claude Code required permissions for normal collaboration loop.
+ * Only includes commands genuinely needed for standard operation.
+ * Explicitly excludes:
+ * - Local node scripts (e.g. `node bin/c2c.js ...` - untrusted in arbitrary workspaces)
+ * - Sensitive token revocation (`c2c unpair`)
+ * - Settings mutation (`c2c config-allow`, `c2c sandbox-allow`)
+ * - Configuration/provisioning commands (`c2c tunnel`, `c2c prefs`, `c2c workspace`, `c2c update-check`)
+ * - Abrupt process kills (`c2c stop`, `c2c restart`)
  */
 export const REQUIRED_C2C_SUBCOMMANDS = [
   "setup",
   "doctor",
   "start",
-  "stop",
-  "restart",
   "status",
   "pair",
   "session",
   "record",
-  "tunnel",
-  "prefs",
   "logs",
-  "workspace",
-  "update-check",
 ] as const;
 
 export const REQUIRED_PERMISSIONS: string[] = [
   ...REQUIRED_C2C_SUBCOMMANDS.map((sub) => `Bash(c2c ${sub} *)`),
-  ...REQUIRED_C2C_SUBCOMMANDS.map((sub) => `Bash(node bin/c2c.js ${sub} *)`),
 ];
 
 export function isCaseInsensitive(platform: NodeJS.Platform = process.platform): boolean {
-  return platform === "win32" || platform === "darwin";
+  return platform === "win32";
 }
 
 export function normPath(p: string, platform: NodeJS.Platform = process.platform): string {
@@ -186,23 +185,27 @@ export function writeClaudeSettingsAtomic(configPath: string, settings: ClaudeSe
 }
 
 /**
- * Finds the actual .git directory (resolves standard directories and worktrees with `gitdir:` pointers).
+ * Returns the path to the repository's info/exclude file using Git itself.
+ * Uses `git rev-parse --git-path info/exclude` to accurately locate $GIT_COMMON_DIR/info/exclude
+ * across standard repositories, linked worktrees, and custom gitdirs.
+ * Returns null if not in a git repository or git command fails.
  */
-export function findGitDir(workspaceRoot: string): string | null {
+export function getGitExcludePath(workspaceRoot: string): string | null {
   try {
-    const gitPath = path.join(workspaceRoot, ".git");
-    if (!fs.existsSync(gitPath)) return null;
-    const stat = fs.statSync(gitPath);
-    if (stat.isDirectory()) return gitPath;
-    if (stat.isFile()) {
-      const content = fs.readFileSync(gitPath, "utf8");
-      const match = content.match(/^gitdir:\s*(.+)$/m);
-      if (match && match[1]) {
-        const raw = match[1].trim();
-        return path.isAbsolute(raw) ? path.normalize(raw) : path.resolve(workspaceRoot, raw);
-      }
+    // Only query git if workspace root contains a .git directory or worktree .git pointer
+    const gitMarker = path.join(workspaceRoot, ".git");
+    if (!fs.existsSync(gitMarker)) {
+      return null;
     }
-    return null;
+    const raw = execFileSync("git", ["rev-parse", "--git-path", "info/exclude"], {
+      cwd: workspaceRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 3000,
+    }).trim();
+
+    if (!raw) return null;
+    return path.isAbsolute(raw) ? path.normalize(raw) : path.resolve(workspaceRoot, raw);
   } catch {
     return null;
   }
@@ -210,16 +213,16 @@ export function findGitDir(workspaceRoot: string): string | null {
 
 /**
  * Ensures .claude/settings.local.json is properly ignored:
- * - If workspace is a Git repository or Git worktree, appends to .git/info/exclude (preserves .gitignore cleanliness).
- * - If not a Git repository, creates or appends to workspace .gitignore safely.
+ * - If workspace is a Git repository or Git worktree, queries Git for `--git-path info/exclude`
+ *   and appends the rule without dirtying the tracked `.gitignore`.
+ * - If not a Git repository, creates or appends to workspace .gitignore safely as fallback.
  */
 export function ensureIgnoreLocalSettings(workspaceRoot: string): void {
   const targetRule = ".claude/settings.local.json";
   try {
-    const gitDir = findGitDir(workspaceRoot);
-    if (gitDir && fs.existsSync(gitDir)) {
-      const infoDir = path.join(gitDir, "info");
-      const excludePath = path.join(infoDir, "exclude");
+    const excludePath = getGitExcludePath(workspaceRoot);
+    if (excludePath) {
+      const infoDir = path.dirname(excludePath);
       fs.mkdirSync(infoDir, { recursive: true });
 
       let content = "";

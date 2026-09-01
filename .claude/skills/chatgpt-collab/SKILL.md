@@ -34,7 +34,8 @@ The C2C Bridge gives ChatGPT read-only MCP access to the current workspace over 
 ### Prerequisites
 - Node.js >= 20
 - `cloudflared` installed (`brew install cloudflared` on macOS, `winget install Cloudflare.cloudflared` on Windows, or package manager on Linux)
-- A ChatGPT Plus / Pro / Team / Enterprise account with Custom Actions / Connectors / Developer Mode enabled
+- For **Mode C / Mode A (MCP Mode)**: A ChatGPT Pro, Team, Enterprise, Edu, or Business account with Developer Mode / Custom Apps enabled.
+- For **Mode P (Manual Context Fallback)**: ChatGPT Plus or Free accounts (OpenAI restricts custom MCP server connectors to Pro, Team, Enterprise, Edu, and Business).
 
 ### Step 1: Initialize Workspace Bridge & Permissions
 In your target workspace, ensure required permissions and sandbox state paths are configured, then launch the bridge:
@@ -49,16 +50,17 @@ This configures `.claude/settings.local.json` (auto-approved commands and state 
 
 ### Step 2: Configure ChatGPT Connector (Mode C)
 Guide the user through these steps:
-1. Open ChatGPT Settings -> **Security** -> Enable **Developer Mode** (开发人员模式).
-2. Open **Settings** -> **Connectors** (or `https://chatgpt.com/plugins#settings/Connectors?create-connector=true`).
-3. Click **Create Connector** and enter:
-   - **Name**: `<connectorName>` (from setup output)
+1. Open ChatGPT Web -> **Settings** -> **Apps** (or **Developer Mode**).
+2. Click **Add Custom App / Connector** (or visit `https://chatgpt.com/#settings/Apps`).
+3. Enter:
+   - **Name**: `<connectorName>` (from setup output, e.g. `Claude Code with ChatGPT`)
    - **Description**: `Secure read-only workspace bridge for Claude Code planning and review.`
    - **Server URL**: `<mcpUrl>`
    - **Authentication**: `OAuth`
 4. Click **Connect / Authorize**. The browser will open the C2C OAuth pairing page.
 5. Enter the **Pairing Code** and confirm authorization.
 6. Once connected, ChatGPT has secure read-only MCP access to the workspace.
+7. **Important UX Note**: In ChatGPT Web conversations, ensure you select or `@mention` the registered connector app (`@Claude Code with ChatGPT`) in each prompt turn requiring fresh MCP tool inspections.
 
 ---
 
@@ -181,6 +183,70 @@ NEXT_EXPECTED_STEP:
 <The immediate next action required>
 
 Please call `workspace_info` and `git_diff` through MCP, then continue the review or planning loop.
+```
+
+### F. `Mode P` Prompts (ChatGPT Plus / Free — Manual Context Fallback)
+
+When using ChatGPT Plus where custom MCP connectors are unavailable, use Mode P templates:
+
+#### `INIT_P` (Claude Code -> ChatGPT Plus)
+```text
+[C2C]
+STATE: INIT_P
+TASK_ID: c2c_<hex4>
+ITERATION: 0
+EXECUTOR: claude-code
+MODE: P (Plus Manual Context Handoff)
+
+NOTICE:
+MCP is unavailable for this ChatGPT plan; using manual context fallback.
+
+GOAL:
+<Goal description>
+
+WORKSPACE_SUMMARY:
+Name: <project_name>
+Type: <project_type>
+
+BOUNDED_TREE:
+<Bounded directory tree (max 100 entries, depth 3)>
+
+TARGET_SOURCE_SNIPPETS:
+=== FILE: <relative_path> ===
+<Bounded source code (max 200 lines / 16 KB)>
+=== END FILE ===
+
+INSTRUCTION:
+Review the provided context bundle and produce a structured [C2C] STATE: PLAN response.
+```
+
+#### `EXECUTED_P` (Claude Code -> ChatGPT Plus)
+```text
+[C2C]
+STATE: EXECUTED_P
+TASK_ID: c2c_<hex4>
+ITERATION: 1
+EXECUTOR: claude-code
+MODE: P (Plus Manual Context Handoff)
+
+NOTICE:
+MCP is unavailable for this ChatGPT plan; using manual context fallback.
+
+RESULT:
+Execution completed.
+
+CHANGED_FILES:
+- <file_1>
+- <file_2>
+
+SANITIZED_TESTS:
+<Test results summary>
+
+BOUNDED_GIT_DIFF:
+<Sanitized git diff (capped at 24 KB / 200 lines)>
+
+INSTRUCTION:
+Audit the diff and test execution output. Reply with [C2C] STATE: DONE if satisfied, or STATE: PLAN for the next iteration.
 ```
 
 ---

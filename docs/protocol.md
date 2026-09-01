@@ -35,6 +35,25 @@ INIT ──► PLAN ──► EXECUTING ──► EXECUTED ──► REVIEW ─�
 | `BLOCKED` | ChatGPT | Progress cannot continue due to missing external information, environmental errors, or architectural contradictions. |
 | `ERROR` | Either | Protocol, bridge, or infrastructure failure. |
 | `HANDOFF` | Claude Code | Continuation brief sent to a newly initialized or replacement ChatGPT chat. |
+| `INIT_P` | Claude Code | Mode P fallback for ChatGPT Plus/Free: delivers bounded, sanitized workspace trees and snippets for planning. |
+| `EXECUTED_P` | Claude Code | Mode P fallback for ChatGPT Plus/Free: delivers bounded, sanitized git diffs and test logs for review. |
+
+---
+
+## Plan Capability & Operational Invariants
+
+1. **MCP Mode (Mode C / Mode A)**:
+   - Supported on **ChatGPT Pro, Team, Enterprise, Edu, and Business** plans.
+   - Requires Developer Mode / Custom Apps in ChatGPT Web.
+   - **Important Web UX Invariant**: In ChatGPT Web conversations, selecting or `@mentioning` the C2C app (`@Claude Code with ChatGPT`) in the prompt composer is required per turn whenever fresh MCP tool executions are needed.
+   - Control messages stay strictly under 1 KB.
+
+2. **Mode P (Plus Manual Context Handoff)**:
+   - Designed truthfully for **ChatGPT Plus** ($20/mo) and Free plans where custom MCP server endpoints are unavailable.
+   - Explicitly discloses: `[C2C Mode P: MCP is unavailable on this plan; using manual context fallback.]`
+   - Zero cookie scraping, zero credential spoofing, zero plan bypass.
+   - Bounded context invariants: Tree <= 100 entries (depth <= 3), file snippets <= 200 lines / 16 KB, diff <= 200 lines / 24 KB, total bundle <= 48 KB.
+   - All snippets and diffs pass through `IgnoreRules` (sensitive files blocked) and `sanitizeExecutionOutput` (API keys, bearer tokens, and home paths redacted).
 
 ---
 

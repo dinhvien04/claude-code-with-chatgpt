@@ -11,17 +11,21 @@
 
 ## The Problem · 解决什么问题
 
-**English** — ChatGPT Plus/Pro web quotas often sit idle while coding agents burn scarce API tokens on high-level architecture, task decomposition, and code reviews. This project routes the heavy reasoning and planning to your existing ChatGPT web subscription, while Claude Code CLI executes code changes, runs tests, and manages git locally. No reverse proxies, no API keys exposed to ChatGPT — just official web UI reasoning paired with a secure, read-only MCP bridge.
+**English** — ChatGPT Pro, Team, Enterprise, and Edu subscriptions include advanced reasoning capabilities and custom MCP developer connectivity, but coding agents often burn scarce API tokens on high-level architecture, task decomposition, and code reviews. This project routes the heavy reasoning and planning to your ChatGPT web workspace, while Claude Code CLI executes code changes, runs tests, and manages git locally. For ChatGPT Plus users where custom MCP connectors are not supported by OpenAI, a truthful manual context handoff (**Mode P**) is provided.
 
-**中文** — ChatGPT 付费订阅（Plus / Pro）的网页版额度往往大量闲置，而本地编码 Agent 却在消耗昂贵的 API 额度进行架构规划和代码审查。本项目将“思考与审查”交给网页版 ChatGPT，Claude Code 只负责本地执行。无逆向代理、无需向 ChatGPT 提供 API Key——官方 Web UI 配合只读 MCP 桥接。
+**中文** — ChatGPT Pro、Team、Enterprise 与 Edu 订阅包含高阶推理能力与自定义 MCP 开发者连接器，而本地编码 Agent 却在消耗昂贵的 API 额度进行架构规划和代码审查。本项目将“思考与审查”交给网页版 ChatGPT，Claude Code 只负责本地执行。针对 OpenAI 尚未支持自定义 MCP 连接器的 ChatGPT Plus 用户，系统提供了专用的手动上下文交付模式（**Mode P**）。
 
 ---
 
 ## What It Is · 这是什么
 
-**English** — Turn ChatGPT Web into an architectural planning and review co-pilot for your Claude Code sessions, while Claude Code retains 100% execution ownership. Your entire repository is never uploaded in bulk: ChatGPT inspects only the exact files, diffs, and search results it needs on demand through an OAuth 2.1-secured, **strictly read-only** Model Context Protocol (MCP) connection.
+**English** — Turn ChatGPT Web into an architectural planning and review co-pilot for your Claude Code sessions, while Claude Code retains 100% execution ownership.
+- **For ChatGPT Pro / Team / Enterprise / Edu (MCP Mode)**: ChatGPT inspects only the exact files, diffs, and search results it needs on demand through an OAuth 2.1-secured, **strictly read-only** Model Context Protocol (MCP) connection.
+- **For ChatGPT Plus (Mode P — Plus Manual Context Handoff)**: Claude Code generates bounded, deterministic, and sanitized context/review bundles that can be pasted directly into ChatGPT Plus without risking secret exposure.
 
-**中文** — 将 ChatGPT 网页版作为 Claude Code 编码会话的“规划与审查大脑”，而本地执行权完全保留在 Claude Code 手中。项目代码永远不会被全量上传：ChatGPT 通过受 OAuth 2.1 保护的**严格只读** MCP 连接，仅按需调取所需的文件片段、diff 和搜索结果。
+**中文** — 将 ChatGPT 网页版作为 Claude Code 编码会话的“规划与审查大脑”，而本地执行权完全保留在 Claude Code 手中。
+- **针对 ChatGPT Pro / Team / Enterprise / Edu（MCP 模式）**：ChatGPT 通过受 OAuth 2.1 保护的**严格只读** MCP 连接，按需调取所需的文件片段、diff 和搜索结果。
+- **针对 ChatGPT Plus（Mode P 手动上下文交付模式）**：Claude Code 生成严格受限、脱敏且经过安全过滤的上下文/审查数据包，直接复制到 ChatGPT Plus 中使用。
 
 **Provider-Agnostic Executor** — Claude Code operates as the local execution engine and can be powered by any model provider (Anthropic, 9Router, Google Gemini, Amazon Bedrock, Google Vertex AI, or local proxy) without affecting the C2C Bridge architecture.
 
@@ -87,8 +91,10 @@ Please install and configure "claude-code-with-chatgpt" for me:
 2. Clone & Build: Clone https://github.com/dinhvien04/claude-code-with-chatgpt.git into ~/claude-code-with-chatgpt (or pull if existing), then run `corepack pnpm install` and `corepack pnpm build`.
 3. Skill & Permission Setup: Copy .claude/skills/chatgpt-collab to the local workspace's .claude/skills/chatgpt-collab (or global ~/.claude/skills/chatgpt-collab). Run `c2c config-allow -w .` in the target workspace to configure auto-approved permissions and sandbox state write paths in .claude/settings.local.json.
 4. Initialization: Run `c2c setup -w .` to launch the local bridge daemon and generate the public pairing URL and one-time code.
-5. Guide me through Mode C pairing in ChatGPT Web (Security -> Developer Mode -> Connectors -> Add Connector).
-6. Verify file-read and workspace_info over MCP, and show a confirmation checklist when ready.
+5. Guide me through pairing in ChatGPT Web:
+   - For ChatGPT Pro / Team / Enterprise / Edu: Navigate to Settings -> Apps (or Developer Mode) -> Add Custom App / Connector and enter the MCP URL.
+   - For ChatGPT Plus / Free: Use Mode P (Plus Manual Context Handoff) without MCP.
+6. Verify connectivity or manual handoff readiness, and show a confirmation checklist when ready.
 ```
 
 ### 适用于 Claude Code（简体中文）
@@ -102,8 +108,10 @@ Please install and configure "claude-code-with-chatgpt" for me:
 2. 下载与构建：克隆仓库到 ~/claude-code-with-chatgpt（已存在则 git pull），执行 corepack pnpm install && corepack pnpm build。
 3. 配置 Skill 与权限：将 .claude/skills/chatgpt-collab 放置到工作区或 ~/.claude/skills/chatgpt-collab，并在目标工作区执行 `c2c config-allow -w .` 将所需工具权限与沙箱状态写入路径自动配置到 .claude/settings.local.json。
 4. 启动服务：执行 c2c setup -w . 启动本地桥接守护进程与隧道，获取公网 MCP 地址及一次性配对码。
-5. 引导配对：指引我在 ChatGPT 网页版（设置 -> 安全 -> 开发者模式 -> 连接器）完成 Mode C 手动添加连接器与配对。
-6. 验证 MCP 连通性（workspace_info 与只读测试），全部就绪后输出完成清单。
+5. 引导配对流程：
+   - 针对 ChatGPT Pro / Team / Enterprise / Edu：在 ChatGPT 网页版进入 设置 -> Apps / 已连接应用（或开发者模式），添加自定义应用并填入 MCP 地址。
+   - 针对 ChatGPT Plus / Free 用户：指引使用 Mode P（Plus 手动上下文交付模式）。
+6. 验证连通性或手动交付准备，全部就绪后输出完成清单。
 ```
 
 ---
@@ -142,15 +150,23 @@ This command starts the loopback daemon, establishes a Cloudflare tunnel, and ou
 - **One-Time Pairing Code** (8 characters, 5-minute validity)
 - **Connector Name** (e.g. `Claude Code with ChatGPT · my-app`)
 
-### 4. Connect in ChatGPT Web (Mode C: Guided Manual Handoff)
-1. Open ChatGPT Web -> **Settings** -> **Security** -> Enable **Developer Mode**.
-2. Go to **Settings** -> **Connectors** (or visit `https://chatgpt.com/plugins#settings/Connectors`).
-3. Click **Create Connector**:
+### 4. Connect in ChatGPT Web
+
+#### Option A: ChatGPT Pro / Team / Enterprise / Edu (MCP Mode)
+1. Open ChatGPT Web -> **Settings** -> **Apps** (or **Developer Mode**).
+2. Select **Add Custom App / Connector**:
    - **Name**: `Claude Code with ChatGPT` (or your workspace connector name)
    - **Server URL**: The `https://...trycloudflare.com/mcp` URL provided by `c2c setup`
    - **Authentication**: `OAuth`
-4. Click **Connect** / **Authorize**, enter the 8-character pairing code in the browser window, and submit.
-5. In a new ChatGPT conversation, paste the **Boot Prompt** (available in `docs/protocol.md` or via `/chatgpt-collab boot`).
+3. Click **Connect** / **Authorize**, enter the 8-character pairing code in the browser window, and submit.
+4. In your ChatGPT conversation, send the **Boot Prompt** (see `docs/protocol.md` or via `/chatgpt-collab boot`) and ensure the C2C app is selected or `@mentioned` when asking ChatGPT to inspect the workspace.
+
+#### Option B: ChatGPT Plus / Free (Mode P — Manual Context Handoff)
+*Note: OpenAI currently restricts custom MCP server connectors to Pro, Team, Enterprise, and Edu plans. If using ChatGPT Plus, custom MCP is unavailable; use Mode P instead.*
+1. In Claude Code CLI, type: `/chatgpt-collab --mode-p <goal>` (or follow Mode P prompts in `/chatgpt-collab`).
+2. Claude Code will format a bounded, sanitized context package containing the workspace tree, relevant source context, and git diff.
+3. Paste the package into your ChatGPT Plus chat. ChatGPT will analyze the context and return `[C2C] STATE: PLAN`.
+4. Paste the plan back into Claude Code for execution and testing.
 
 ### 5. Running a Task
 In Claude Code CLI:
