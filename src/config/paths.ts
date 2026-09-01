@@ -4,20 +4,24 @@ import fs from "node:fs";
 
 /**
  * State directory resolution, following OS conventions.
+ * Primary state directory for Claude Code with ChatGPT is 'claude-code-with-chatgpt'.
  * Override with C2C_STATE_DIR (used heavily by tests).
  */
 export function getStateDir(): string {
   const override = process.env.C2C_STATE_DIR;
   if (override && override.trim() !== "") return path.resolve(override);
   const home = os.homedir();
+
   switch (process.platform) {
     case "darwin":
-      return path.join(home, "Library", "Application Support", "codex-with-chatgpt");
-    case "win32":
-      return path.join(process.env.LOCALAPPDATA ?? path.join(home, "AppData", "Local"), "codex-with-chatgpt");
+      return path.join(home, "Library", "Application Support", "claude-code-with-chatgpt");
+    case "win32": {
+      const localApp = process.env.LOCALAPPDATA ?? path.join(home, "AppData", "Local");
+      return path.join(localApp, "claude-code-with-chatgpt");
+    }
     default: {
       const base = process.env.XDG_STATE_HOME ?? path.join(home, ".local", "state");
-      return path.join(base, "codex-with-chatgpt");
+      return path.join(base, "claude-code-with-chatgpt");
     }
   }
 }

@@ -6,7 +6,8 @@ export const CHATGPT_PLUGINS_URL = "https://chatgpt.com/plugins";
 export const CHATGPT_CREATE_CONNECTOR_URL =
   "https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins";
 
-export const DEFAULT_CONNECTOR_NAME = "Codex with ChatGPT";
+export const DEFAULT_CONNECTOR_NAME = "Claude Code with ChatGPT";
+export const LEGACY_CONNECTOR_NAME = "Codex with ChatGPT";
 
 export interface LastEndpoint {
   workspaceId: string;
@@ -61,8 +62,8 @@ export function sanitizeConnectorLabel(name: string, workspaceId: string): strin
 
 /**
  * Same workspace keeps one connector title forever.
- * A workspace already recorded without a title stays on the original
- * "Codex with ChatGPT" name. A new workspace gets a distinct title.
+ * A workspace already recorded with a previous name keeps that name.
+ * A new workspace gets the default Claude Code with ChatGPT connector title.
  */
 export function connectorNameFor(opts: {
   workspaceName: string;

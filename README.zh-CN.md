@@ -83,7 +83,7 @@ ChatGPT 付费订阅（Plus / Pro）的网页版额度往往大量闲置，而�
 请帮我完整安装并配置 claude-code-with-chatgpt：
 
 1. 环境自检：检查 git 与 Node.js ≥ 20，并确保已安装 cloudflared（macOS 用 brew，Windows 用 winget）。
-2. 下载与构建：克隆仓库到 ~/claude-code-with-chatgpt（已存在则 git pull），执行 corepack pnpm install && corepack pnpm build。
+2. 下载与构建：克隆仓库到 ~/claude-code-with-chatgpt（git clone https://github.com/dinhvien04/claude-code-with-chatgpt.git，已存在则 git pull），执行 corepack pnpm install && corepack pnpm build。
 3. 配置 Skill：将 .claude/skills/chatgpt-collab 安装到当前工作区或 ~/.claude/skills/chatgpt-collab，并更新实际克隆路径。
 4. 启动服务：执行 c2c setup 启动本地桥接守护进程与隧道，获取公网 MCP 地址及一次性配对码。
 5. 引导配对：指引我在 ChatGPT 网页版（设置 -> 安全 -> 开发者模式 -> 连接器）完成 Mode C 手动添加连接器与配对。
@@ -97,7 +97,7 @@ ChatGPT 付费订阅（Plus / Pro）的网页版额度往往大量闲置，而�
 ### 1. 手动安装
 ```bash
 # 克隆仓库
-git clone https://github.com/XiaoDuoYa/codex-with-chatgpt.git ~/claude-code-with-chatgpt
+git clone https://github.com/dinhvien04/claude-code-with-chatgpt.git ~/claude-code-with-chatgpt
 cd ~/claude-code-with-chatgpt
 
 # 安装依赖并构建

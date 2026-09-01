@@ -13,6 +13,11 @@ export interface SandboxAllowResult {
   configPath: string;
 }
 
+/**
+ * Legacy Codex configuration helper.
+ * Isolated for optional backward compatibility.
+ * Normal Claude Code setup workflows DO NOT touch Codex files.
+ */
 export function getCodexHome(): string {
   const fromEnv = process.env.CODEX_HOME?.trim();
   if (fromEnv) return path.resolve(fromEnv);
@@ -49,7 +54,7 @@ export function isStateDirAllowlisted(content: string, stateDir: string): boolea
 
 /**
  * Idempotently add the C2C state directory to Codex's sandbox writable_roots.
- * Works on macOS, Windows, and Linux. Never rewrites unrelated config.
+ * Isolated for legacy Codex compatibility only.
  */
 export function ensureSandboxAllowlist(opts?: {
   configPath?: string;

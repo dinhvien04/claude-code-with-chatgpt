@@ -84,7 +84,7 @@ Copy the prompt below and paste it to Claude Code:
 Please install and configure "claude-code-with-chatgpt" for me:
 
 1. Environment check: Ensure git and Node.js >= 20 are available. Ensure cloudflared is installed (macOS: brew, Windows: winget).
-2. Clone & Build: Clone https://github.com/XiaoDuoYa/codex-with-chatgpt into ~/claude-code-with-chatgpt (or pull if existing), then run `corepack pnpm install` and `corepack pnpm build`.
+2. Clone & Build: Clone https://github.com/dinhvien04/claude-code-with-chatgpt.git into ~/claude-code-with-chatgpt (or pull if existing), then run `corepack pnpm install` and `corepack pnpm build`.
 3. Skill Setup: Copy .claude/skills/chatgpt-collab to the local workspace's .claude/skills/chatgpt-collab (or global ~/.claude/skills/chatgpt-collab), setting the checkout path.
 4. Initialization: Run `c2c setup` to launch the local bridge daemon and generate the public pairing URL and one-time code.
 5. Guide me through Mode C pairing in ChatGPT Web (Security -> Developer Mode -> Connectors -> Add Connector).
@@ -113,7 +113,7 @@ Please install and configure "claude-code-with-chatgpt" for me:
 ### 1. Manual Installation
 ```bash
 # Clone the repository
-git clone https://github.com/XiaoDuoYa/codex-with-chatgpt.git ~/claude-code-with-chatgpt
+git clone https://github.com/dinhvien04/claude-code-with-chatgpt.git ~/claude-code-with-chatgpt
 cd ~/claude-code-with-chatgpt
 
 # Install dependencies and build

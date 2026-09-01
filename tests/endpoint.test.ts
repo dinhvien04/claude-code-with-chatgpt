@@ -34,10 +34,10 @@ describe("connectorNameFor", () => {
       connectorNameFor({
         workspaceName: "EchoMind",
         workspaceId: "abc123abc123",
-        previousName: "Codex with ChatGPT",
+        previousName: "Custom Connector Title",
         hadEndpointBefore: true,
       })
-    ).toBe(DEFAULT_CONNECTOR_NAME);
+    ).toBe("Custom Connector Title");
   });
 
   it("keeps the legacy title when this workspace was used before the name field existed", () => {
@@ -57,7 +57,7 @@ describe("connectorNameFor", () => {
         workspaceId: "def456def456",
         hadEndpointBefore: false,
       })
-    ).toBe("Codex with ChatGPT · Landing");
+    ).toBe(`${DEFAULT_CONNECTOR_NAME} · Landing`);
   });
 });
 

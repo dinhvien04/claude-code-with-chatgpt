@@ -117,26 +117,27 @@ npm run typecheck
 npm test
 > vitest run
 
- ✓ tests/execution-output.test.ts (7 tests)
  ✓ tests/prefs.test.ts (5 tests)
+ ✓ tests/claude-settings.test.ts (6 tests)
  ✓ tests/workspace.test.ts (20 tests)
- ✓ tests/tunnel.test.ts (22 tests)
+ ✓ tests/search.test.ts (6 tests)
  ✓ tests/session.test.ts (14 tests)
- ✓ tests/pairing.test.ts (8 tests)
+ ✓ tests/tunnel.test.ts (22 tests)
+ ✓ tests/execution-output.test.ts (7 tests)
  ✓ tests/sandbox-allow.test.ts (7 tests)
  ✓ tests/port.test.ts (2 tests)
- ✓ tests/claude-skill.test.ts (7 tests)
  ✓ tests/security-redteam.test.ts (24 tests)
- ✓ tests/search.test.ts (6 tests)
- ✓ tests/endpoint.test.ts (8 tests)
  ✓ tests/runtime.test.ts (4 tests)
+ ✓ tests/claude-skill.test.ts (7 tests)
+ ✓ tests/pairing.test.ts (8 tests)
+ ✓ tests/endpoint.test.ts (8 tests)
  ✓ tests/oauth.test.ts (16 tests)
  ✓ tests/mcp-integration.test.ts (16 tests)
  ✓ tests/git.test.ts (14 tests)
 
- Test Files  16 passed (16)
-      Tests  180 passed (180)
-   Duration  4.71s
+ Test Files  17 passed (17)
+      Tests  186 passed (186)
+   Duration  6.91s
 ```
 
 ### C. Build Pipeline
@@ -158,7 +159,7 @@ npm run build
 
 - [x] install succeeds
 - [x] typecheck succeeds (0 errors)
-- [x] unit tests succeed (180/180 passed)
+- [x] unit tests succeed (186/186 passed)
 - [x] integration tests succeed
 - [x] build succeeds (`dist/` clean)
 - [x] bridge starts and binds to loopback
@@ -175,11 +176,11 @@ npm run build
 - [x] no arbitrary write MCP exists
 - [x] no arbitrary exec MCP exists
 - [x] Claude Skill is structurally correct (`.claude/skills/chatgpt-collab/SKILL.md`)
-- [x] Claude setup paths are correct
+- [x] Claude setup paths and settings are correct (`c2c config-allow` updates `.claude/settings.json`)
 - [x] provider/model is not hardcoded (supports Anthropic, 9Router, Gemini, Bedrock, OpenAI)
 - [x] 9Router is optional
 - [x] Gemini is optional
-- [x] Codex-specific assumptions remaining are documented and isolated
+- [x] Codex-specific assumptions remaining are documented and isolated to legacy commands
 - [x] control-plane capability is represented truthfully (Mode C default, Mode A optional)
 - [x] manual fallback works and is fully documented
 
@@ -187,53 +188,24 @@ npm run build
 
 ## 7. Known Non-Blocking LOW Observations
 
-1. **CLI Banner Compatibility**: `src/version.ts` retains `PRODUCT_NAME = "Codex with ChatGPT"` for CLI banner backward compatibility with upstream tooling, while documentation and skills use `Claude Code with ChatGPT`.
-2. **Refresh Token Family Revocation**: As identified in the security audit, standard single-use refresh token rotation is enforced; full family tree revocation under RFC 6819 is slated for v0.2.0.
+1. **Refresh Token Family Revocation**: As identified in the security audit, standard single-use refresh token rotation is enforced; full family tree revocation under RFC 6819 is slated for v0.2.0.
+2. **Legacy Codex Commands**: `c2c sandbox-allow` is preserved exclusively for legacy Codex backwards compatibility; standard Claude Code workflows use `c2c config-allow` without touching `~/.codex/config.toml`.
 
 ---
 
-## 8. Git Status & Summary Statistics
+## 8. Summary of Independent Multi-Agent Verification
 
-```text
-git status --short:
- M README.md
- M README.zh-CN.md
- M docs/architecture.md
- M docs/protocol.md
- M docs/security.md
- M docs/troubleshooting.md
- M skill/SKILL.md
- M src/auth/oauth.ts
- M src/auth/store.ts
- M src/bridge/server.ts
- M src/config/paths.ts
- M src/execution/records.ts
- M src/execution/sanitize.ts
- M src/mcp/server.ts
- M src/workspace/git.ts
- M src/workspace/ignore.ts
- M src/workspace/manager.ts
- M tests/execution-output.test.ts
- M tests/git.test.ts
-?? .claude/
-?? ADVERSARIAL_TEST_REVIEW.md
-?? ARCHITECTURE_REVIEW.md
-?? CLAUDE_ARCHITECTURE.md
-?? CONTROL_PLANE_ANALYSIS.md
-?? FINAL_FINDINGS.md
-?? PORT_PLAN.md
-?? PORT_REVIEW.md
-?? PROTOCOL_AUDIT.md
-?? PROTOCOL_REVIEW.md
-?? SECURITY_AUDIT_POST.md
-?? SECURITY_AUDIT_PRE.md
-?? TEST_PLAN.md
-?? UPSTREAM_ANALYSIS.md
-?? docs/claude-code-port.md
-?? scripts/browser-agent.mjs
-?? tests/claude-skill.test.ts
-?? tests/security-redteam.test.ts
+- **Reviewer A (Architecture & Port Fidelity)**: **PASSED** — Confirmed dual-plane separation, exactly 9 read-only MCP tools, OAuth 2.1 PKCE + CSPRNG pairing flow, connector lifecycle management, OS-specific state resolution, and complete decoupling of standard setup/doctor workflows from Codex config.
+- **Reviewer B (Security & Sandbox Invariants)**: **PASSED** — Confirmed strict read-only tool surface (`readOnlyHint: true`), deepest-ancestor canonical realpath containment, NTFS ADS (`::$DATA`) and trailing dot/space rejection, platform-aware case-insensitive sensitive file filtering (`normCase`), log sanitization/private key hard rejection, timing-safe crypto comparison, rate limiting, and minimal-permission `.claude/settings.json` generation.
+- **Reviewer C (Documentation & DevEx)**: **PASSED** — Confirmed git clone URLs in `README.md` and `README.zh-CN.md` point to `https://github.com/dinhvien04/claude-code-with-chatgpt.git`, upstream attribution to `XiaoDuoYa/codex-with-chatgpt` is preserved, CLI command documentation reflects current toolset (`c2c config-allow`, `c2c setup`, `c2c doctor`, `c2c pair`, `c2c status`, `c2c sandbox-allow`), and `browser-agent.mjs` accurately presents browser automation capabilities.
 
-git diff --stat:
- 19 files changed, 1020 insertions(+), 783 deletions(-)
-```
+---
+
+## 9. Final Gate Verdict
+
+**ALL GATES PASSED (100% COMPLETE)**
+- Build Pipeline: Clean (`tsc -p tsconfig.json`)
+- Typecheck: Clean (`tsc --noEmit`, 0 errors)
+- Automated Test Suite: 186/186 tests passing across 17 test suites (100% pass rate)
+- All requirements from external audit fully remediated.
+- No unauthorized git push executed.

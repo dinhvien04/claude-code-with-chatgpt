@@ -54,9 +54,11 @@ async function handlePair(chromium, mcpUrl, pairingCode, connectorName = "Claude
 
   let browser;
   try {
+    // Launch browser instance. Note: Standard browser contexts launch in isolated profiles.
+    // When ChatGPT authentication or Cloudflare verification is needed, the script yields immediately to Mode C.
     browser = await chromium.launch({
       headless: false,
-      channel: "chrome" // Attempt using system Chrome for existing session cookies if available
+      channel: "chrome" // Attempt using system Chrome binary if available
     }).catch(async () => {
       return await chromium.launch({ headless: false });
     });
