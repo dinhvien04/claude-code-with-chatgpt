@@ -32,6 +32,8 @@ export interface AuthorizationCodeRecord {
   expiresAt: number;
 }
 
+export type TokenStatus = "active" | "used" | "revoked";
+
 export interface TokenRecord {
   hash: string;
   kind: "access" | "refresh";
@@ -40,12 +42,24 @@ export interface TokenRecord {
   scopes: string[];
   issuedAt: number;
   expiresAt: number;
-  revoked: boolean;
+  familyId: string;
+  generation: number;
+  status: TokenStatus;
+  consumedAt?: number;
+  revokedAt?: number;
+  revocationReason?: string;
+}
+
+export interface RevokedFamilyRecord {
+  familyId: string;
+  revokedAt: number;
+  reason: string;
 }
 
 interface PersistedAuthState {
   clients: ClientRegistration[];
   tokens: TokenRecord[];
+  revokedFamilies?: RevokedFamilyRecord[];
 }
 
 export type VerifyTokenResult =
@@ -79,6 +93,7 @@ export function safeEqual(a: string, b: string): boolean {
 export class AuthStore {
   private clients = new Map<string, ClientRegistration>();
   private tokens = new Map<string, TokenRecord>();
+  private revokedFamilies = new Map<string, RevokedFamilyRecord>();
   private authCodes = new Map<string, AuthorizationCodeRecord>();
   private readonly file: string;
 
@@ -96,8 +111,13 @@ export class AuthStore {
     if (!data) return;
     const now = Date.now();
     for (const client of data.clients ?? []) this.clients.set(client.clientId, client);
+    for (const fam of data.revokedFamilies ?? []) {
+      this.revokedFamilies.set(fam.familyId, fam);
+    }
     for (const token of data.tokens ?? []) {
-      if (!token.revoked && token.expiresAt > now) this.tokens.set(token.hash, token);
+      if (token.expiresAt > now) {
+        this.tokens.set(token.hash, token);
+      }
     }
   }
 
@@ -105,7 +125,8 @@ export class AuthStore {
     const now = Date.now();
     const state: PersistedAuthState = {
       clients: [...this.clients.values()],
-      tokens: [...this.tokens.values()].filter((t) => !t.revoked && t.expiresAt > now),
+      tokens: [...this.tokens.values()].filter((t) => t.expiresAt > now),
+      revokedFamilies: [...this.revokedFamilies.values()],
     };
     writeSecureJson(this.file, state);
   }
@@ -169,10 +190,14 @@ export class AuthStore {
     scopes: string[];
     workspaceId?: string;
     accessTtlMs?: number;
+    familyId?: string;
+    generation?: number;
   }): { accessToken: string; refreshToken: string | null; expiresIn: number; scopes: string[] } {
     const now = Date.now();
     const workspaceId = input.workspaceId ?? this.workspaceId;
     const accessTtl = input.accessTtlMs ?? ACCESS_TOKEN_TTL_MS;
+    const familyId = input.familyId ?? newToken("c2c_fam");
+    const generation = input.generation ?? 0;
 
     const accessToken = newToken("c2c_at");
     this.tokens.set(sha256hex(accessToken), {
@@ -183,7 +208,9 @@ export class AuthStore {
       scopes: input.scopes,
       issuedAt: now,
       expiresAt: now + accessTtl,
-      revoked: false,
+      familyId,
+      generation,
+      status: "active",
     });
 
     let refreshToken: string | null = null;
@@ -197,7 +224,9 @@ export class AuthStore {
         scopes: input.scopes,
         issuedAt: now,
         expiresAt: now + REFRESH_TOKEN_TTL_MS,
-        revoked: false,
+        familyId,
+        generation,
+        status: "active",
       });
     }
     this.save();
@@ -213,27 +242,71 @@ export class AuthStore {
     const record = this.tokens.get(sha256hex(token));
     if (!record) return { ok: false, reason: "unknown" };
     if (record.kind !== "access") return { ok: false, reason: "wrong_kind" };
-    if (record.revoked) return { ok: false, reason: "revoked" };
+    if (record.status === "revoked" || this.revokedFamilies.has(record.familyId)) {
+      return { ok: false, reason: "revoked" };
+    }
+    if (record.status !== "active") return { ok: false, reason: "revoked" };
     if (Date.now() > record.expiresAt) return { ok: false, reason: "expired" };
     return { ok: true, record };
   }
 
-  /** Refresh-token rotation: old refresh token is revoked, a new pair is issued. */
+  /**
+   * Revokes an entire token family upon token replay detection or client sign-out.
+   */
+  revokeFamily(familyId: string, reason = "revoked"): number {
+    let count = 0;
+    const now = Date.now();
+    this.revokedFamilies.set(familyId, { familyId, revokedAt: now, reason });
+    for (const record of this.tokens.values()) {
+      if (record.familyId === familyId && record.status !== "revoked") {
+        record.status = "revoked";
+        record.revokedAt = now;
+        record.revocationReason = reason;
+        count++;
+      }
+    }
+    this.save();
+    return count;
+  }
+
+  /**
+   * Refresh-token rotation with RFC 6819 Section 5.2.2.3 replay attack detection.
+   * If a previously consumed refresh token is presented, the entire family is invalidated.
+   */
   refresh(
     refreshToken: string,
     clientId: string
-  ): { ok: true; tokens: ReturnType<AuthStore["issueTokens"]> } | { ok: false; reason: string } {
+  ):
+    | { ok: true; tokens: ReturnType<AuthStore["issueTokens"]> }
+    | { ok: false; reason: string; replayDetected?: boolean } {
     const record = this.tokens.get(sha256hex(refreshToken));
     if (!record || record.kind !== "refresh") return { ok: false, reason: "invalid_grant" };
-    if (record.revoked) return { ok: false, reason: "invalid_grant" };
-    if (Date.now() > record.expiresAt) return { ok: false, reason: "invalid_grant" };
     if (record.clientId !== clientId) return { ok: false, reason: "invalid_client" };
-    record.revoked = true;
-    this.tokens.delete(record.hash);
+
+    // Check if the entire family was previously revoked
+    if (this.revokedFamilies.has(record.familyId)) {
+      return { ok: false, reason: "invalid_grant" };
+    }
+
+    // REPLAY ATTACK DETECTION: Token was already used
+    if (record.status === "used") {
+      this.revokeFamily(record.familyId, "replay_detected");
+      return { ok: false, reason: "invalid_grant", replayDetected: true };
+    }
+
+    if (record.status === "revoked") return { ok: false, reason: "invalid_grant" };
+    if (Date.now() > record.expiresAt) return { ok: false, reason: "invalid_grant" };
+
+    // Transition old token to tombstone
+    record.status = "used";
+    record.consumedAt = Date.now();
+
     const tokens = this.issueTokens({
       clientId,
       scopes: record.scopes,
       workspaceId: record.workspaceId,
+      familyId: record.familyId,
+      generation: record.generation + 1,
     });
     return { ok: true, tokens };
   }
@@ -241,9 +314,14 @@ export class AuthStore {
   revokeToken(token: string): boolean {
     const record = this.tokens.get(sha256hex(token));
     if (!record) return false;
-    record.revoked = true;
-    this.tokens.delete(record.hash);
-    this.save();
+    if (record.kind === "refresh") {
+      this.revokeFamily(record.familyId, "token_revoked");
+    } else {
+      record.status = "revoked";
+      record.revokedAt = Date.now();
+      record.revocationReason = "token_revoked";
+      this.save();
+    }
     return true;
   }
 
@@ -251,6 +329,7 @@ export class AuthStore {
   revokeAll(): number {
     const count = this.tokens.size;
     this.tokens.clear();
+    this.revokedFamilies.clear();
     this.authCodes.clear();
     this.save();
     return count;

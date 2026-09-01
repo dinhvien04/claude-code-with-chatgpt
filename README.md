@@ -152,8 +152,8 @@ This command starts the loopback daemon, establishes a Cloudflare tunnel, and ou
 
 ### 4. Connect in ChatGPT Web
 
-#### Option A: ChatGPT Pro / Team / Enterprise / Edu (MCP Mode)
-1. Open ChatGPT Web -> **Settings** -> **Apps** (or **Developer Mode**).
+#### Option A: ChatGPT Pro / Team / Enterprise / Edu / Business (MCP Mode)
+1. Open ChatGPT Web -> **Settings** -> **Apps** -> **Advanced Settings** (or **Developer Mode**).
 2. Select **Add Custom App / Connector**:
    - **Name**: `Claude Code with ChatGPT` (or your workspace connector name)
    - **Server URL**: The `https://...trycloudflare.com/mcp` URL provided by `c2c setup`
@@ -161,12 +161,20 @@ This command starts the loopback daemon, establishes a Cloudflare tunnel, and ou
 3. Click **Connect** / **Authorize**, enter the 8-character pairing code in the browser window, and submit.
 4. In your ChatGPT conversation, send the **Boot Prompt** (see `docs/protocol.md` or via `/chatgpt-collab boot`) and ensure the C2C app is selected or `@mentioned` when asking ChatGPT to inspect the workspace.
 
-#### Option B: ChatGPT Plus / Free (Mode P — Manual Context Handoff)
-*Note: OpenAI currently restricts custom MCP server connectors to Pro, Team, Enterprise, and Edu plans. If using ChatGPT Plus, custom MCP is unavailable; use Mode P instead.*
-1. In Claude Code CLI, type: `/chatgpt-collab --mode-p <goal>` (or follow Mode P prompts in `/chatgpt-collab`).
-2. Claude Code will format a bounded, sanitized context package containing the workspace tree, relevant source context, and git diff.
-3. Paste the package into your ChatGPT Plus chat. ChatGPT will analyze the context and return `[C2C] STATE: PLAN`.
-4. Paste the plan back into Claude Code for execution and testing.
+#### Option B: ChatGPT Plus / Free (Mode P — 100% Local Manual Context Handoff)
+*Note: OpenAI currently restricts custom MCP server connectors to Pro, Team, Enterprise, Edu, and Business plans. If using ChatGPT Plus or Free, custom MCP is unavailable; use Mode P instead.*
+1. Mode P operates **100% locally with zero tunnel, zero daemon, and zero setup prerequisites**.
+2. In Claude Code CLI, run: `/chatgpt-collab --mode-p <goal>` or invoke the bundle generator directly:
+   ```bash
+   c2c bundle plan -w . --goal "<goal>" --files "src/index.ts,src/app.ts"
+   ```
+3. Paste the generated bounded `[C2C] STATE: INIT_P` package into your ChatGPT Plus chat. ChatGPT will analyze the context and return `[C2C] STATE: PLAN`.
+4. Claude Code executes the changes locally.
+5. Generate the review bundle:
+   ```bash
+   c2c bundle review -w . --task <task_id> --iteration 1
+   ```
+6. Paste the `[C2C] STATE: EXECUTED_P` package into ChatGPT Plus for final audit.
 
 ### 5. Running a Task
 In Claude Code CLI:
@@ -202,6 +210,10 @@ c2c pair            # Generate a fresh 8-char pairing code
 c2c unpair          # Revoke all OAuth tokens for the workspace
 c2c stop            # Stop the background daemon and tunnel
 c2c logs            # View bridge and access logs (--verbose for debug)
+
+# Mode P (Local Bounded Handoff for Plus / Free)
+c2c bundle plan     # Generate bounded [C2C] STATE: INIT_P bundle
+c2c bundle review   # Generate bounded [C2C] STATE: EXECUTED_P bundle
 
 # Configuration & Permissions
 c2c config-allow    # Configure .claude/settings.local.json permissions & sandbox write paths

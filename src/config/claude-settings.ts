@@ -62,6 +62,7 @@ export const REQUIRED_C2C_SUBCOMMANDS = [
   "session",
   "record",
   "logs",
+  "bundle",
 ] as const;
 
 export const REQUIRED_PERMISSIONS: string[] = [
@@ -87,6 +88,19 @@ export class MalformedSettingsError extends Error {
         }`
     );
     this.name = "MalformedSettingsError";
+  }
+}
+
+export class GitExcludeError extends Error {
+  constructor(public readonly workspaceRoot: string, public readonly cause: unknown) {
+    super(
+      `Failed to configure Git exclude for workspace at ${workspaceRoot}: ` +
+        `Cannot safely ignore .claude/settings.local.json in Git metadata. ` +
+        `Aborting operation to prevent committing machine-specific settings. Details: ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`
+    );
+    this.name = "GitExcludeError";
   }
 }
 
@@ -188,40 +202,41 @@ export function writeClaudeSettingsAtomic(configPath: string, settings: ClaudeSe
  * Returns the path to the repository's info/exclude file using Git itself.
  * Uses `git rev-parse --git-path info/exclude` to accurately locate $GIT_COMMON_DIR/info/exclude
  * across standard repositories, linked worktrees, and custom gitdirs.
- * Returns null if not in a git repository or git command fails.
+ * Throws an error if git command fails.
  */
-export function getGitExcludePath(workspaceRoot: string): string | null {
-  try {
-    // Only query git if workspace root contains a .git directory or worktree .git pointer
-    const gitMarker = path.join(workspaceRoot, ".git");
-    if (!fs.existsSync(gitMarker)) {
-      return null;
-    }
-    const raw = execFileSync("git", ["rev-parse", "--git-path", "info/exclude"], {
-      cwd: workspaceRoot,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 3000,
-    }).trim();
+export function getGitExcludePath(workspaceRoot: string): string {
+  const raw = execFileSync("git", ["rev-parse", "--git-path", "info/exclude"], {
+    cwd: workspaceRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      GIT_CEILING_DIRECTORIES: path.dirname(path.resolve(workspaceRoot)),
+    },
+    timeout: 3000,
+  }).trim();
 
-    if (!raw) return null;
-    return path.isAbsolute(raw) ? path.normalize(raw) : path.resolve(workspaceRoot, raw);
-  } catch {
-    return null;
+  if (!raw) {
+    throw new Error("Git returned an empty path for info/exclude");
   }
+  return path.isAbsolute(raw) ? path.normalize(raw) : path.resolve(workspaceRoot, raw);
 }
 
 /**
  * Ensures .claude/settings.local.json is properly ignored:
- * - If workspace is a Git repository or Git worktree, queries Git for `--git-path info/exclude`
- *   and appends the rule without dirtying the tracked `.gitignore`.
- * - If not a Git repository, creates or appends to workspace .gitignore safely as fallback.
+ * - If workspace is a Git repository or Git worktree (has a .git directory or worktree .git pointer),
+ *   queries Git for `--git-path info/exclude` and appends the rule without dirtying the tracked `.gitignore`.
+ * - If Git exclude configuration fails in a Git workspace, throws GitExcludeError (Fail-Closed).
+ * - If non-Git directory, writes to workspace .gitignore as safe fallback.
  */
 export function ensureIgnoreLocalSettings(workspaceRoot: string): void {
   const targetRule = ".claude/settings.local.json";
-  try {
-    const excludePath = getGitExcludePath(workspaceRoot);
-    if (excludePath) {
+  const gitMarker = path.join(workspaceRoot, ".git");
+  const inGitRepo = fs.existsSync(gitMarker);
+
+  if (inGitRepo) {
+    try {
+      const excludePath = getGitExcludePath(workspaceRoot);
       const infoDir = path.dirname(excludePath);
       fs.mkdirSync(infoDir, { recursive: true });
 
@@ -240,15 +255,20 @@ export function ensureIgnoreLocalSettings(workspaceRoot: string): void {
         );
       });
       if (!hasRule) {
-        const addition = content.length === 0 || content.endsWith("\n")
-          ? `${targetRule}\n`
-          : `\n${targetRule}\n`;
+        const addition =
+          content.length === 0 || content.endsWith("\n")
+            ? `${targetRule}\n`
+            : `\n${targetRule}\n`;
         fs.appendFileSync(excludePath, addition, "utf8");
       }
       return;
+    } catch (err) {
+      throw new GitExcludeError(workspaceRoot, err);
     }
+  }
 
-    // Fallback for non-git workspace: ensure in workspace .gitignore
+  // Fallback for non-Git workspaces
+  try {
     const gitignorePath = path.join(workspaceRoot, ".gitignore");
     let content = "";
     if (fs.existsSync(gitignorePath)) {
@@ -265,13 +285,14 @@ export function ensureIgnoreLocalSettings(workspaceRoot: string): void {
       );
     });
     if (!hasRule) {
-      const addition = content.length === 0 || content.endsWith("\n")
-        ? `${targetRule}\n`
-        : `\n${targetRule}\n`;
+      const addition =
+        content.length === 0 || content.endsWith("\n")
+          ? `${targetRule}\n`
+          : `\n${targetRule}\n`;
       fs.appendFileSync(gitignorePath, addition, "utf8");
     }
   } catch {
-    // Best-effort workspace ignore update
+    // Best-effort workspace ignore update for non-git
   }
 }
 

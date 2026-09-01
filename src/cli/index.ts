@@ -58,6 +58,7 @@ import {
 } from "../session/state.js";
 import { appendExecutionRecord } from "../execution/records.js";
 import { saveExecutionOutput } from "../execution/output.js";
+import { buildPlanBundle, buildReviewBundle } from "../bundle/index.js";
 
 const program = new Command();
 
@@ -740,6 +741,103 @@ program
       say(`Workspace：${data.name}（${data.workspaceId}）`);
       say(`类型：${data.projectType}  语言：${data.languages.join(", ") || "-"}`);
       say(`路径：${data.root}`);
+    }
+  });
+
+// ---------------------------------------------------------------- bundle (Mode P Local Handoff)
+
+const bundleCmd = program
+  .command("bundle")
+  .description("Generate bounded, sanitized context packages for ChatGPT Plus/Free manual handoff (Mode P)");
+
+bundleCmd
+  .command("plan")
+  .description("Generate [C2C] STATE: INIT_P bundle for task planning")
+  .option("-w, --workspace <path>", "workspace root (defaults to current directory)")
+  .requiredOption("--goal <goal>", "task goal description")
+  .option("--task <id>", "task ID (e.g. c2c_f81a)")
+  .option("--files <paths>", "comma-separated candidate source files to include as bounded snippets")
+  .option("--max-depth <n>", "directory tree max depth (default: 3)", "3")
+  .option("--max-tree-entries <n>", "directory tree max entries (default: 100)", "100")
+  .option("--json", "machine-readable output", false)
+  .action(async (opts: {
+    workspace?: string;
+    goal: string;
+    task?: string;
+    files?: string;
+    maxDepth: string;
+    maxTreeEntries: string;
+    json: boolean;
+  }) => {
+    try {
+      const root = resolveWorkspace(opts.workspace);
+      const candidateFiles = opts.files
+        ? opts.files.split(",").map((f) => f.trim()).filter(Boolean)
+        : undefined;
+
+      const result = await buildPlanBundle({
+        workspaceRoot: root,
+        goal: opts.goal,
+        taskId: opts.task,
+        files: candidateFiles,
+        maxDepth: parseInt(opts.maxDepth, 10),
+        maxTreeEntries: parseInt(opts.maxTreeEntries, 10),
+      });
+
+      if (opts.json) {
+        say(JSON.stringify({ ok: true, ...result }));
+        return;
+      }
+
+      say(result.text);
+    } catch (error) {
+      handleCliError(error, opts.json);
+    }
+  });
+
+bundleCmd
+  .command("review")
+  .description("Generate [C2C] STATE: EXECUTED_P bundle for implementation audit")
+  .option("-w, --workspace <path>", "workspace root (defaults to current directory)")
+  .requiredOption("--task <id>", "task ID")
+  .requiredOption("--iteration <n>", "iteration number (e.g. 1)")
+  .option("--diff-mode <mode>", "unstaged | staged | head (default: unstaged)", "unstaged")
+  .option("--no-output", "exclude execution output logs")
+  .option("--output-id <id>", "specific execution output ID to include")
+  .option("--json", "machine-readable output", false)
+  .action(async (opts: {
+    workspace?: string;
+    task: string;
+    iteration: string;
+    diffMode: string;
+    output: boolean;
+    outputId?: string;
+    json: boolean;
+  }) => {
+    try {
+      const root = resolveWorkspace(opts.workspace);
+      const mode = opts.diffMode.trim().toLowerCase();
+      if (mode !== "unstaged" && mode !== "staged" && mode !== "head") {
+        throw new Error("diff-mode must be unstaged, staged, or head");
+      }
+
+      const result = await buildReviewBundle({
+        workspaceRoot: root,
+        taskId: opts.task,
+        iteration: parseInt(opts.iteration, 10),
+        diffMode: mode as "unstaged" | "staged" | "head",
+        includeOutput: opts.output,
+        outputId: opts.outputId ? parseInt(opts.outputId, 10) : undefined,
+      });
+
+      if (opts.json) {
+        say(JSON.stringify({ ok: true, ...result }));
+        return;
+      }
+
+      say(result.text);
+    } catch (error) {
+      handleCliError(error, opts.json);
     }
   });
 

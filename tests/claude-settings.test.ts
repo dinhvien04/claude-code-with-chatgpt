@@ -251,6 +251,7 @@ describe("Claude Code Settings & Permissions (Enhanced Regression Suite)", () =>
       expect(allow).toContain("Bash(c2c session *)");
       expect(allow).toContain("Bash(c2c record *)");
       expect(allow).toContain("Bash(c2c logs *)");
+      expect(allow).toContain("Bash(c2c bundle *)");
 
       // Security Invariant: NO repository-local node script auto-approvals
       expect(allow.some((p) => p.includes("bin/c2c.js"))).toBe(false);

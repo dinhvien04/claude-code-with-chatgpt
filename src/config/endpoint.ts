@@ -1,10 +1,10 @@
 import path from "node:path";
 import { getStateDir, readJsonIfExists, writeSecureJson } from "./paths.js";
 
-export const CHATGPT_DEVELOPER_MODE_URL = "https://chatgpt.com/#settings/Apps";
-export const CHATGPT_APPS_URL = "https://chatgpt.com/#settings/Apps";
-export const CHATGPT_CREATE_CONNECTOR_URL = "https://chatgpt.com/#settings/Apps";
-/** @deprecated Use CHATGPT_APPS_URL */
+export const CHATGPT_DEVELOPER_MODE_URL = "https://chatgpt.com";
+export const CHATGPT_APPS_URL = "https://chatgpt.com";
+export const CHATGPT_CREATE_CONNECTOR_URL = "https://chatgpt.com";
+/** @deprecated Use official UI navigation (Settings -> Apps) */
 export const CHATGPT_PLUGINS_URL = CHATGPT_APPS_URL;
 
 export const DEFAULT_CONNECTOR_NAME = "Claude Code with ChatGPT";

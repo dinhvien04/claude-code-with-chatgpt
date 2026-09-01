@@ -131,8 +131,8 @@ c2c setup -w .
 
 ### 4. 在 ChatGPT 网页版连接与操作
 
-#### 选项 A：ChatGPT Pro / Team / Enterprise / Edu（MCP 模式）
-1. 打开 ChatGPT 网页版 -> **设置** -> **Apps**（或 **开发者模式**）。
+#### 选项 A：ChatGPT Pro / Team / Enterprise / Edu / Business（MCP 模式）
+1. 打开 ChatGPT 网页版 -> **设置** -> **Apps** -> **高级设置**（或 **开发者模式**）。
 2. 点击 **添加自定义应用 / 连接器**：
    - **名称**：填入 `c2c setup` 显示的连接器名称（如 `Claude Code with ChatGPT`）
    - **服务器 URL**：填入 `c2c setup` 给出的公网 MCP 地址（`https://...trycloudflare.com/mcp`）
@@ -140,12 +140,20 @@ c2c setup -w .
 3. 点击 **连接 / 授权**，在弹出的配对窗口中输入 8 位配对码并提交。
 4. 在 ChatGPT 中开启新会话，发送 **Boot Prompt**（见 `docs/protocol.md` 或通过 Claude Code 生成），并在需要执行 MCP 工具调用时确保选择或 `@mention` 该应用。
 
-#### 选项 B：ChatGPT Plus / Free（Mode P — 手动上下文交付模式）
-*说明：OpenAI 当前仅面向 Pro、Team、Enterprise 与 Edu 订阅开放自定义 MCP 连接器。Plus 用户无需配置 MCP，使用 Mode P 即可体验结构化规划与审查。*
-1. 在 Claude Code CLI 中输入：`/chatgpt-collab --mode-p 需求描述`。
-2. Claude Code 将自动生成经过安全过滤与脱敏的文件结构、源码摘要与 git diff 上下文包。
-3. 将数据包粘贴至 ChatGPT Plus，ChatGPT 将返回规划 `[C2C] STATE: PLAN`。
-4. 将规划粘贴回 Claude Code 执行。
+#### 选项 B：ChatGPT Plus / Free（Mode P — 纯本地手动上下文交付模式）
+*说明：OpenAI 当前仅面向 Pro、Team、Enterprise、Edu 与 Business 订阅开放自定义 MCP 连接器。Plus 与 Free 用户无需配置隧道与守护进程，直接在本地生成上下文包即可：*
+1. Mode P **完全运行在本地，无需 cloudflared、无需隧道、无需后台常驻守护进程、无需 OAuth 配对**。
+2. 在 Claude Code CLI 中直接输入：`/chatgpt-collab --mode-p 需求描述` 或直接运行生成命令：
+   ```bash
+   c2c bundle plan -w . --goal "需求描述" --files "src/index.ts,src/app.ts"
+   ```
+3. 将生成的结构化 `[C2C] STATE: INIT_P` 数据包粘贴至 ChatGPT Plus，ChatGPT 将返回规划 `[C2C] STATE: PLAN`。
+4. 在 Claude Code 中执行代码修改与测试。
+5. 生成审查数据包：
+   ```bash
+   c2c bundle review -w . --task <task_id> --iteration 1
+   ```
+6. 将 `[C2C] STATE: EXECUTED_P` 数据包粘贴回 ChatGPT Plus 进行独立审查。
 
 ### 5. 开始协作任务
 在 Claude Code 中输入：
@@ -181,6 +189,10 @@ c2c pair            # 重新生成一个 8 位一次性配对码
 c2c unpair          # 吊销当前工作区的所有授权令牌
 c2c stop            # 停止后台 Bridge 守护进程与隧道
 c2c logs            # 查看运行日志（添加 --verbose 查看详细输出）
+
+# Mode P（Plus / Free 纯本地受限上下文交付）
+c2c bundle plan     # 生成受限规划数据包 [C2C] STATE: INIT_P
+c2c bundle review   # 生成受限审查数据包 [C2C] STATE: EXECUTED_P
 
 # 配置与执行记录
 c2c config-allow    # 自动将所需权限与沙箱写入路径写入 .claude/settings.local.json

@@ -66,7 +66,7 @@ async function handlePair(chromium, mcpUrl, pairingCode, connectorName = "Claude
     printModeCFallback(
       `Could not launch browser instance: ${err.message}`,
       [
-        `Open ChatGPT in your browser: https://chatgpt.com/#settings/Apps`,
+        `Open ChatGPT in your browser (Settings -> Apps -> Advanced Settings / Developer Mode).`,
         `Create a custom app/connector with Name: "${connectorName}", Server URL: "${mcpUrl}", Auth: OAuth`,
         `When the pairing page opens, enter Pairing Code: "${pairingCode}"`
       ]
@@ -78,8 +78,8 @@ async function handlePair(chromium, mcpUrl, pairingCode, connectorName = "Claude
   const page = await context.newPage();
 
   try {
-    const connectorsUrl = "https://chatgpt.com/#settings/Apps";
-    console.log(`[browser-agent] Navigating to ChatGPT apps settings...`);
+    const connectorsUrl = "https://chatgpt.com";
+    console.log(`[browser-agent] Navigating to ChatGPT...`);
     await page.goto(connectorsUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
 
     // Check for login wall or Cloudflare verification
@@ -91,7 +91,7 @@ async function handlePair(chromium, mcpUrl, pairingCode, connectorName = "Claude
         isCloudflare > 0 ? "Cloudflare / Human Verification encountered." : "ChatGPT authentication required.",
         [
           "Log into ChatGPT in your browser.",
-          `Go to Settings -> Apps -> Add Custom App.`,
+          `Navigate to Settings -> Apps -> Advanced Settings / Developer Mode -> Add Custom App.`,
           `Set Server URL to: ${mcpUrl}`,
           `Authenticate and enter Pairing Code: ${pairingCode}`
         ]
@@ -118,7 +118,7 @@ async function handlePair(chromium, mcpUrl, pairingCode, connectorName = "Claude
       printModeCFallback(
         "Connector creation form not immediately interactable (ChatGPT UI update or navigation change).",
         [
-          `Ensure Developer Mode is enabled in ChatGPT Settings -> Apps.`,
+          `Ensure Developer Mode is enabled in ChatGPT Settings -> Apps -> Advanced Settings.`,
           `In ChatGPT Apps / Developer Mode, create a new custom app named "${connectorName}".`,
           `Set Server URL to: ${mcpUrl}`,
           `Authorize with Pairing Code: ${pairingCode}`
@@ -129,7 +129,8 @@ async function handlePair(chromium, mcpUrl, pairingCode, connectorName = "Claude
     printModeCFallback(
       `Browser automation step encountered an error: ${err.message}`,
       [
-        `Open: https://chatgpt.com/#settings/Apps`,
+        `Open ChatGPT in your browser.`,
+        `Navigate to Settings -> Apps -> Advanced Settings / Developer Mode.`,
         `Create or update "${connectorName}" with URL: ${mcpUrl}`,
         `Authorize using Pairing Code: ${pairingCode}`
       ]

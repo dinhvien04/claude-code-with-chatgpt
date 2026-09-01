@@ -53,19 +53,25 @@
 
 ---
 
-## Control Plane Realization (Modes C & A)
+## Control Plane Realization (Modes C, P & A)
 
-Claude Code runs primarily as a native CLI terminal tool without an embedded GUI/Electron browser environment. The control plane accommodates this through two operational modes:
+Claude Code runs primarily as a native CLI terminal tool without an embedded GUI/Electron browser environment. The control plane accommodates this through three operational modes:
 
-1. **Mode C: Guided Manual Handoff (Primary & Default)**
-   - Claude Code formats single-click copyable `[C2C]` prompt blocks in the terminal.
+1. **Mode C: Guided Manual Handoff (Default for Pro / Team / Enterprise / Edu / Business)**
+   - Claude Code formats single-click copyable `[C2C]` prompt blocks (< 1 KB) in the terminal.
    - The user pastes the block into ChatGPT Web.
-   - ChatGPT queries the workspace via MCP tools and replies with `[C2C] STATE: PLAN`.
+   - ChatGPT queries the workspace via read-only MCP tools and replies with `[C2C] STATE: PLAN`.
    - The user pastes the plan back to Claude Code. Claude Code implements, verifies, and records execution (`c2c record`).
    - Claude Code generates `[C2C] STATE: EXECUTED` for the user to pass to ChatGPT for final review.
    - 100% reliable, zero browser automation dependencies, resilient to CAPTCHAs and 2FA.
 
-2. **Mode A: Optional Scripted Automation (`scripts/browser-agent.mjs`)**
+2. **Mode P: Plus Manual Context Handoff (100% Local for Plus / Free)**
+   - Operates entirely locally with zero `cloudflared`, zero tunnels, zero daemons, and zero OAuth setup.
+   - Deterministic CLI generator (`c2c bundle plan` and `c2c bundle review`) packages project trees, selected source snippets, git diffs, and sanitized test outputs into bounded context envelopes (`INIT_P`, `EXECUTED_P`).
+   - Hard limits enforced: total bundle <= 48 KB, directory tree <= 100 entries (depth <= 3), source snippets <= 200 lines / 16 KB, git diff <= 200 lines / 24 KB.
+   - Strict defense-in-depth sanitization reuses `Workspace.resolve` and `sanitizeExecutionOutput` to block sensitive files and redact API keys/credentials.
+
+3. **Mode A: Optional Scripted Automation (`scripts/browser-agent.mjs`)**
    - For users who prefer semi-automated browser interactions, an optional standalone Playwright script can transfer prompts.
    - Designed to gracefully fail over to Mode C immediately upon encountering Cloudflare Turnstile, login prompts, or DOM timeouts.
 
@@ -77,13 +83,14 @@ Claude Code runs primarily as a native CLI terminal tool without an embedded GUI
 | :--- | :--- |
 | `bridge/` | Express application setup, loopback listener (127.0.0.1), port fallback/reuse, daemon runtime state, and local loopback admin API. |
 | `mcp/` | Model Context Protocol server exposing 9 read-only tools via stateless Streamable HTTP transport. |
-| `auth/` | OAuth 2.1 authorization server compliant with RFC 8414 (discovery metadata), RFC 7591 (dynamic client registration), RFC 7636 (PKCE S256), refresh token rotation, and RFC 7009 revocation. Tokens stored as SHA-256 hashes. |
+| `bundle/` | Deterministic local Mode P context package generator: hierarchical budget enforcement (48 KB max), directory tree builder, bounded file snippets, and sanitized diff packaging. |
+| `auth/` | OAuth 2.1 authorization server compliant with RFC 8414 (discovery metadata), RFC 7591 (dynamic client registration), RFC 7636 (PKCE S256), RFC 6819 Section 5.2.2.3 token family tracking, generation counters, tombstones, replay attack revocation cascades, and RFC 7009 revocation. Tokens stored as SHA-256 hashes. |
 | `pairing/` | One-time pairing code manager: CSPRNG generation, 5-minute TTL, 5-attempt brute-force protection, IP rate limiting, and single-use invalidation. |
 | `workspace/` | Workspace security boundary: canonical realpath resolution of deepest ancestors, Windows NTFS alternate stream rejection (`::$DATA`), case-insensitive sensitive file filtering, `.c2cignore` evaluation, paginated reads, ripgrep searches, and sanitized git status/diff inspection. |
 | `tunnel/` | `TunnelProvider` abstraction managing Cloudflare Quick Tunnels and named custom domains with health supervision and automatic reconnection. |
 | `execution/` | Execution record lifecycle (`c2c record`), tracking modified files, exit statuses, and sanitized test/build logs (`execution_output`) for ChatGPT review. |
 | `process/` | Background daemon supervision, cross-platform PID management, and graceful shutdown handlers. |
-| `cli/` | The `c2c` CLI interface (`setup`, `doctor`, `pair`, `unpair`, `status`, `logs`, `stop`, `config-allow`). |
+| `cli/` | The `c2c` CLI interface (`setup`, `doctor`, `pair`, `unpair`, `status`, `logs`, `stop`, `bundle`, `config-allow`). |
 | `config/`, `logger/` | Cross-platform state directories (`%LOCALAPPDATA%` on Windows, `~/Library/Application Support` on macOS, `~/.local/state` on Linux) and secret-redacting logging. |
 
 ---
