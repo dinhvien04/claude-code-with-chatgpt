@@ -77,6 +77,15 @@ Biến ChatGPT Web thành trợ lý lập kế hoạch kiến trúc và đánh g
 
 ---
 
+## Kiến trúc tự động hóa (Automation architecture)
+
+Hệ thống phân định ranh giới rõ ràng giữa hai vai trò tự động hóa:
+
+- **Claude Code (Executor — Động cơ thực thi)**: Đóng vai trò là công cụ thực thi trực tiếp tại máy cục bộ, chịu trách nhiệm chỉnh sửa mã nguồn, thực thi lệnh shell, chạy kiểm thử và quản lý các thay đổi git.
+- **ChatGPT (External Planning & Review Gate — Cổng lập kế hoạch và đánh giá ngoài)**: Đóng vai trò là cổng lập kế hoạch và kiểm duyệt độc lập từ bên ngoài, chịu trách nhiệm suy luận kiến trúc bậc cao, phân rã kế hoạch thực thi và đối soát độc lập mã nguồn trước khi nghiệm thu hoàn tất.
+
+---
+
 ## Cài đặt bằng một đoạn văn (One-Paste Install)
 
 Chọn câu lệnh (prompt) phù hợp với gói thuê bao ChatGPT của bạn để dán vào Claude Code:
