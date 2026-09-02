@@ -1,7 +1,7 @@
 {
-  "name": "codex-with-chatgpt",
+  "name": "claude-code-with-chatgpt",
   "version": "0.1.1",
-  "description": "ChatGPT thinks. Codex works. Use ChatGPT as the planning brain while keeping the Codex harness.",
+  "description": "ChatGPT thinks. Claude Code works.",
   "type": "module",
   "license": "MIT",
   "bin": {

@@ -70,9 +70,9 @@ ChatGPT Pro、Business、Enterprise 与 Edu 订阅包含强大推理规划能力
 ```
 
 - **双平面解耦**：
-  - **控制面（Control Plane）**：Claude Code 与 ChatGPT 仅传递轻量级 `[C2C]` 状态消息（`INIT → PLAN → EXECUTED → REVIEW → DONE`），控制消息体积严格小于 1 KB。绝不在提示词中大段粘贴源码或日志。
-  - **数据面（MCP Data Plane）**：ChatGPT 缺什么拉什么，通过 9 个只读 MCP 工具自主调取：`workspace_info`、`list_directory`、`read_file`、`search_workspace`、`git_status`、`git_diff`、`test_status`、`execution_summary`、`execution_output`。
-- **独立闭环审查**：Claude Code 执行完毕后，ChatGPT 亲自通过 MCP 检查真实的 git diff 和脱敏后的测试输出，绝不轻信口头汇报。
+  - **控制面（Control Plane）**：Claude Code 与 ChatGPT 仅传递轻量级 `[C2C]` 状态消息（`INIT → PLAN → EXECUTED → REVIEW → DONE`）。在 MCP 模式下，控制消息体积严格小于 1 KB 且绝不在提示词中大段粘贴源码或日志 [MCP-Mode-Only]。在 Mode P 模式下，生成严格受限且经过安全脱敏的上下文与审查数据包。
+  - **数据面（只读 MCP 数据面）[MCP-Mode-Only]**：ChatGPT 缺什么拉什么，通过 9 个只读 MCP 工具自主调取：`workspace_info`、`list_directory`、`read_file`、`search_workspace`、`git_status`、`git_diff`、`test_status`、`execution_summary`、`execution_output`。
+- **独立闭环审查**：Claude Code 执行完毕后，ChatGPT 亲自通过 MCP 检查真实的 git diff 和脱敏后的测试输出（或在 Mode P 中通过受限审查 Diff 数据包），绝不轻信口头汇报。
 
 ---
 
@@ -106,7 +106,7 @@ ChatGPT Pro、Business、Enterprise 与 Edu 订阅包含强大推理规划能力
 
 ## 快速上手与操作流程
 
-### 1. 手动安装
+### 1. 通用安装
 ```bash
 # 克隆仓库
 git clone https://github.com/dinhvien04/claude-code-with-chatgpt.git ~/claude-code-with-chatgpt
@@ -120,52 +120,65 @@ corepack pnpm build
 npm link
 ```
 
-### 2. 配置 Claude Code Skill 与设置
-确保在项目根目录或全局存在 `.claude/skills/chatgpt-collab/SKILL.md`。
+### 2. 选择您的工作流
 
-在目标工作区中运行 `config-allow` 预先配置权限与沙箱状态写入路径：
-```bash
-c2c config-allow -w .
+```
+                           通用安装
+                              │
+          ┌───────────────────┴───────────────────┐
+          ▼                                       ▼
+   选项 A：Mode P 模式                     选项 B：MCP 模式
+(ChatGPT Plus / Free)             (Pro / Business / Enterprise / Edu)
+          │                                       │
+   100% 纯本地 CLI                         c2c config-allow -w .
+   无需 cloudflared                        c2c setup -w .
+   无需后台守护进程                        Cloudflare 隧道
+   无需 OAuth / 配对                       ChatGPT OAuth 配对
 ```
 
-### 3. 启动 Bridge 桥接服务
-在您的目标项目根目录下运行：
-```bash
-c2c setup -w .
-```
-该命令将自动启动后台回环守护进程并开启 Cloudflare 隧道，终端会显示：
-- **公网 MCP 地址**（例如 `https://xxxx.trycloudflare.com/mcp`）
-- **一次性配对码**（8 位字符，5 分钟有效）
-- **连接器名称**（例如 `Claude Code with ChatGPT · my-project`）
+---
 
-### 4. 在 ChatGPT 网页版连接与操作
+### 选项 A：Mode P 模式（ChatGPT Plus / Free — 纯本地，零守护进程 / 零隧道）
 
-#### 选项 A：ChatGPT Pro / Business / Enterprise / Edu（MCP 模式）
-1. 打开 ChatGPT 网页版 -> **设置** -> **Apps** -> **高级设置**（或 **开发者模式**）。
-   *(说明：Business、Enterprise 与 Edu 账户上的自定义 MCP 连接器受企业管理员权限策略控制；Pro 账户受开发者模式可用性支持)*。
-2. 点击 **添加自定义应用 / 连接器**：
-   - **名称**：填入 `c2c setup` 显示的连接器名称（如 `Claude Code with ChatGPT`）
-   - **服务器 URL**：填入 `c2c setup` 给出的公网 MCP 地址（`https://...trycloudflare.com/mcp`）
-   - **身份验证**：选择 `OAuth`
-3. 点击 **连接 / 授权**，在弹出的配对窗口中输入 8 位配对码并提交。
-4. 在 ChatGPT 中开启新会话，发送 **Boot Prompt**（见 `docs/protocol.md` 或通过 Claude Code 生成），并在需要执行 MCP 工具调用时确保选择或 `@mention` 该应用。
+*说明：OpenAI 当前仅面向 Pro、Business、Enterprise 与 Edu 订阅开放自定义 MCP 连接器。Plus 与 Free 用户可在本地直接使用 Mode P，无需 cloudflared、无需隧道、无需后台常驻守护进程，也无需 OAuth 配对：*
 
-#### 选项 B：ChatGPT Plus / Free（Mode P — 纯本地手动上下文交付模式）
-*说明：OpenAI 当前仅面向 Pro、Business、Enterprise 与 Edu 订阅开放自定义 MCP 连接器。Plus 与 Free 用户无需配置隧道与守护进程，直接在本地生成上下文包即可：*
-1. Mode P **完全运行在本地，无需 cloudflared、无需隧道、无需后台常驻守护进程、无需 OAuth 配对**。
-2. 在 Claude Code CLI 中直接输入：`/chatgpt-collab --mode-p 需求描述` 或直接运行生成命令：
+1. 在 Claude Code CLI 中直接输入 `/chatgpt-collab --mode-p 需求描述`，或直接在终端生成规划数据包：
    ```bash
    c2c bundle plan -w . --goal "需求描述" --files "src/index.ts,src/app.ts"
    ```
-3. 将生成的结构化 `[C2C] STATE: INIT_P` 数据包粘贴至 ChatGPT Plus，ChatGPT 将返回规划 `[C2C] STATE: PLAN`。
-4. 在 Claude Code 中执行代码修改与测试。
-5. 生成完整审查数据包（默认采用 `head` 模式涵盖暂存、未暂存及安全的新建文件）：
+2. 将生成的受限 `[C2C] STATE: INIT_P` 数据包粘贴至 ChatGPT Plus，ChatGPT 将返回规划 `[C2C] STATE: PLAN`。
+3. Claude Code 在本地执行代码修改并运行测试。
+4. 生成完整审查数据包（默认采用 `head` 模式，涵盖暂存、未暂存及安全的新建文件，支持确定性分块）：
    ```bash
-   c2c bundle review -w . --task <task_id> --iteration 1
+   c2c bundle review -w . --task c2c_0123456789abcdef --iteration 1
    ```
-6. 将 `[C2C] STATE: EXECUTED_P` 数据包粘贴回 ChatGPT Plus 进行独立审查。
+5. 将 `[C2C] STATE: EXECUTED_P` 数据包粘贴回 ChatGPT Plus 进行独立审查。若变更超出单块容量（`REVIEW_CHUNK: 1/N`），可使用 `--chunk <n>` 逐块生成，直至 `REVIEW_COMPLETE: true`。
 
-### 5. 开始协作任务
+---
+
+### 选项 B：MCP 模式（ChatGPT Pro / Business / Enterprise / Edu）
+
+1. 在目标工作区中配置权限与沙箱状态写入路径：
+   ```bash
+   c2c config-allow -w .
+   ```
+2. 启动 Bridge 桥接服务与 Cloudflare 隧道：
+   ```bash
+   c2c setup -w .
+   ```
+   终端会输出公网 MCP 地址（例如 `https://xxxx.trycloudflare.com/mcp`）、8 位配对码以及连接器名称。
+3. 打开 ChatGPT 网页版 -> **设置** -> **Apps** -> **高级设置**（或 **开发者模式**）。
+   *(说明：Business、Enterprise 与 Edu 账户上的自定义 MCP 连接器受企业管理员权限策略控制；Pro 账户受开发者模式可用性支持)*。
+4. 点击 **添加自定义应用 / 连接器**：
+   - **名称**：填入 `Claude Code with ChatGPT`
+   - **服务器 URL**：填入 `c2c setup` 给出的公网 MCP 地址（`https://...trycloudflare.com/mcp`）
+   - **身份验证**：选择 `OAuth`
+5. 点击 **连接 / 授权**，在弹出的配对窗口中输入 8 位配对码并提交。
+6. 在 ChatGPT 中开启新会话，发送 **Boot Prompt**（`/chatgpt-collab boot`），并在需要调用工具时选择或 `@mention` 该应用。
+
+---
+
+### 3. 开始协作任务
 在 Claude Code 中输入：
 ```text
 /chatgpt-collab 帮我实现用户 JWT 认证与刷新机制

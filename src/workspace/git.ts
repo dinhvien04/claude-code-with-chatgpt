@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { IgnoreRules } from "./ignore.js";
 
@@ -131,6 +133,7 @@ export interface GitDiffOptions {
 
 export interface GitDiffResult {
   isRepo: boolean;
+  ok: boolean;
   mode: DiffMode;
   totalBytes: number;
   offset: number;
@@ -138,6 +141,111 @@ export interface GitDiffResult {
   hasMore: boolean;
   nextOffset: number | null;
   diff: string;
+  errorCode?: "NOT_A_REPO" | "GIT_EXEC_FAILED" | "AGGREGATE_CAP_EXCEEDED";
+  errorMessage?: string;
+}
+
+export interface ChangesetInventory {
+  isRepo: boolean;
+  trackedChangedCount: number;
+  safeUntrackedCount: number;
+  sensitiveWithheldCount: number;
+}
+
+export function gitChangesetInventory(
+  target: GitTarget,
+  mode: DiffMode = "head",
+  relPath?: string
+): ChangesetInventory {
+  const root = typeof target === "string" ? target : target.root;
+  const ignoreRules =
+    typeof target === "object" && target.ignoreRules
+      ? target.ignoreRules
+      : new IgnoreRules(root);
+
+  const { modeArgs, isRepo } = getDiffModeArgs(root, mode);
+  if (!isRepo) {
+    return {
+      isRepo: false,
+      trackedChangedCount: 0,
+      safeUntrackedCount: 0,
+      sensitiveWithheldCount: 0,
+    };
+  }
+
+  let trackedChangedCount = 0;
+  let sensitiveWithheldCount = 0;
+
+  // 1. Inventory tracked changes
+  const listResult = runGit(root, [
+    "diff",
+    "--name-status",
+    "-z",
+    "--find-renames=1%",
+    ...modeArgs,
+    "--",
+    ".",
+  ]);
+
+  if (listResult.ok && listResult.stdout) {
+    const tokens = listResult.stdout.split("\0");
+    for (let i = 0; i < tokens.length; ) {
+      const status = tokens[i++];
+      if (!status) break;
+      if (status.startsWith("R") || status.startsWith("C")) {
+        const oldPath = tokens[i++];
+        const newPath = tokens[i++];
+        if (oldPath && newPath) {
+          const isSafe = !ignoreRules.isSensitive(oldPath) && !ignoreRules.isSensitive(newPath);
+          const isRelevant = isPathInScope(oldPath, relPath) || isPathInScope(newPath, relPath);
+          if (isRelevant) {
+            if (isSafe) {
+              trackedChangedCount++;
+            } else {
+              sensitiveWithheldCount++;
+            }
+          }
+        }
+      } else {
+        const filePath = tokens[i++];
+        if (filePath) {
+          const isSafe = !ignoreRules.isSensitive(filePath);
+          const isRelevant = isPathInScope(filePath, relPath);
+          if (isRelevant) {
+            if (isSafe) {
+              trackedChangedCount++;
+            } else {
+              sensitiveWithheldCount++;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Inventory untracked changes
+  let safeUntrackedCount = 0;
+  const untrackedResult = runGit(root, ["ls-files", "--others", "--exclude-standard", "-z", "--", "."]);
+  if (untrackedResult.ok && untrackedResult.stdout) {
+    const untrackedPaths = untrackedResult.stdout.split("\0").filter((p) => p.trim().length > 0);
+    for (const p of untrackedPaths) {
+      const isRelevant = isPathInScope(p, relPath);
+      if (isRelevant) {
+        if (ignoreRules.isSensitive(p)) {
+          sensitiveWithheldCount++;
+        } else if (!ignoreRules.isNoise(p)) {
+          safeUntrackedCount++;
+        }
+      }
+    }
+  }
+
+  return {
+    isRepo: true,
+    trackedChangedCount,
+    safeUntrackedCount,
+    sensitiveWithheldCount,
+  };
 }
 
 export interface WorkspaceLike {
@@ -150,6 +258,10 @@ export type GitTarget = string | WorkspaceLike;
 const EMPTY_TREE_HASH = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 function getDiffModeArgs(root: string, mode: DiffMode): { modeArgs: string[]; isRepo: boolean } {
+  const repoCheck = runGit(root, ["rev-parse", "--is-inside-work-tree"]);
+  if (!repoCheck.ok || repoCheck.stdout.trim() !== "true") {
+    return { modeArgs: [], isRepo: false };
+  }
   if (mode === "staged") return { modeArgs: ["--cached"], isRepo: true };
   if (mode === "head") {
     const headCheck = runGit(root, ["rev-parse", "--verify", "HEAD"]);
@@ -157,11 +269,7 @@ function getDiffModeArgs(root: string, mode: DiffMode): { modeArgs: string[]; is
       return { modeArgs: ["HEAD"], isRepo: true };
     }
     // Unborn repository (0 commits): verify repository status and diff against empty tree
-    const repoCheck = runGit(root, ["rev-parse", "--is-inside-work-tree"]);
-    if (repoCheck.ok && repoCheck.stdout.trim() === "true") {
-      return { modeArgs: [EMPTY_TREE_HASH], isRepo: true };
-    }
-    return { modeArgs: ["HEAD"], isRepo: false };
+    return { modeArgs: [EMPTY_TREE_HASH], isRepo: true };
   }
   return { modeArgs: [], isRepo: true };
 }
@@ -213,6 +321,7 @@ export function gitDiff(
   if (!isRepo) {
     return {
       isRepo: false,
+      ok: false,
       mode,
       totalBytes: 0,
       offset: 0,
@@ -220,6 +329,8 @@ export function gitDiff(
       hasMore: false,
       nextOffset: null,
       diff: "",
+      errorCode: "NOT_A_REPO",
+      errorMessage: "Not a valid Git repository",
     };
   }
 
@@ -236,7 +347,8 @@ export function gitDiff(
   const listResult = runGit(root, listArgs);
   if (!listResult.ok) {
     return {
-      isRepo: false,
+      isRepo: true,
+      ok: false,
       mode,
       totalBytes: 0,
       offset: 0,
@@ -244,6 +356,8 @@ export function gitDiff(
       hasMore: false,
       nextOffset: null,
       diff: "",
+      errorCode: "GIT_EXEC_FAILED",
+      errorMessage: `Git diff inventory failed: ${listResult.stderr || "non-zero exit"}`,
     };
   }
 
@@ -279,6 +393,7 @@ export function gitDiff(
   if (safePaths.length === 0) {
     return {
       isRepo: true,
+      ok: true,
       mode,
       totalBytes: 0,
       offset: 0,
@@ -307,9 +422,10 @@ export function gitDiff(
     ];
     const diffResult = runGit(root, diffArgs);
     if (!diffResult.ok) {
-      // Fail closed on any batch error: never return partial silent success
+      // Fail closed on any batch error: explicitly report failure
       return {
-        isRepo: false,
+        isRepo: true,
+        ok: false,
         mode,
         totalBytes: 0,
         offset: 0,
@@ -317,14 +433,17 @@ export function gitDiff(
         hasMore: false,
         nextOffset: null,
         diff: "",
+        errorCode: "GIT_EXEC_FAILED",
+        errorMessage: `Git diff batch execution failed: ${diffResult.stderr || "non-zero exit"}`,
       };
     }
     if (diffResult.stdout) {
       const chunkBytes = Buffer.byteLength(diffResult.stdout, "utf8");
       if (totalAggregateBytes + chunkBytes > MAX_AGGREGATE_DIFF_BYTES) {
-        // Fail closed on aggregate cap: do not fake a partial successful diff
+        // Fail closed on aggregate cap
         return {
-          isRepo: false,
+          isRepo: true,
+          ok: false,
           mode,
           totalBytes: 0,
           offset: 0,
@@ -332,6 +451,8 @@ export function gitDiff(
           hasMore: false,
           nextOffset: null,
           diff: "",
+          errorCode: "AGGREGATE_CAP_EXCEEDED",
+          errorMessage: `Git diff exceeded maximum aggregate limit of ${MAX_AGGREGATE_DIFF_BYTES} bytes`,
         };
       }
       combinedDiff += diffResult.stdout;
@@ -354,6 +475,7 @@ export function gitDiff(
   const hasMore = offset + sliceLen < full.length;
   return {
     isRepo: true,
+    ok: true,
     mode,
     totalBytes: full.length,
     offset,

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { Workspace } from "../workspace/manager.js";
 import { runGit } from "../workspace/git.js";
 import { sanitizeExecutionOutput } from "../execution/sanitize.js";
+import { truncateUtf8ToBytes } from "./truncate.js";
 
 export interface UntrackedDiffOptions {
   maxFiles?: number;
@@ -9,6 +10,15 @@ export interface UntrackedDiffOptions {
   maxBytesPerFile?: number;
   maxTotalBytes?: number;
   maxTotalLines?: number;
+}
+
+export interface UntrackedFileDiffEntry {
+  path: string;
+  diff: string;
+  bytes: number;
+  lines: number;
+  isBinary: boolean;
+  truncated: boolean;
 }
 
 export interface UntrackedDiffResult {
@@ -19,6 +29,14 @@ export interface UntrackedDiffResult {
   totalLines: number;
   truncated: boolean;
   warnings: string[];
+  entries: UntrackedFileDiffEntry[];
+}
+
+/**
+ * Sanitizes untrusted filenames to prevent protocol/header injection.
+ */
+export function sanitizeUntrustedFilename(p: string): string {
+  return p.replace(/[\r\n\x00-\x1F\x7F]+/g, "_").trim();
 }
 
 /**
@@ -30,6 +48,7 @@ export interface UntrackedDiffResult {
  * - IgnoreRules & sensitive file filtering (.env, *.pem, *.key, id_rsa*, credentials.json, etc.)
  * - Binary file detection (metadata only / skipped)
  * - Per-file and aggregate byte and line bounds
+ * - Exact UTF-8 safe hard byte truncation without multi-byte character corruption
  * - Full credential and secret sanitization
  */
 export async function buildUntrackedFileDiffs(
@@ -37,15 +56,16 @@ export async function buildUntrackedFileDiffs(
   opts: UntrackedDiffOptions = {}
 ): Promise<UntrackedDiffResult> {
   const maxFiles = opts.maxFiles ?? 20;
-  const maxLinesPerFile = opts.maxLinesPerFile ?? 200;
-  const maxBytesPerFile = opts.maxBytesPerFile ?? 16 * 1024; // 16 KB per file
+  const maxLinesPerFile = opts.maxLinesPerFile ?? 5000;
+  const maxBytesPerFile = opts.maxBytesPerFile ?? 64 * 1024 * 1024;
   const maxTotalBytes = opts.maxTotalBytes ?? 24 * 1024; // 24 KB aggregate for diffs
-  const maxTotalLines = opts.maxTotalLines ?? 200;
+  const maxTotalLines = opts.maxTotalLines ?? 5000;
 
   const filesIncluded: string[] = [];
   const skippedFiles: string[] = [];
   const warnings: string[] = [];
   const diffBlocks: string[] = [];
+  const entries: UntrackedFileDiffEntry[] = [];
 
   let accumulatedBytes = 0;
   let accumulatedLines = 0;
@@ -62,6 +82,7 @@ export async function buildUntrackedFileDiffs(
       totalLines: 0,
       truncated: false,
       warnings: [],
+      entries: [],
     };
   }
 
@@ -98,18 +119,28 @@ export async function buildUntrackedFileDiffs(
         continue;
       }
 
+      const safeDisplayPath = sanitizeUntrustedFilename(rel);
+
       // 4. Binary check
       if (await workspace.isBinary(abs)) {
         const binaryNotice = [
-          `diff --git a/${rel} b/${rel}`,
+          `diff --git a/${safeDisplayPath} b/${safeDisplayPath}`,
           `new file mode 100644`,
-          `Binary files /dev/null and b/${rel} differ`,
+          `Binary files /dev/null and b/${safeDisplayPath} differ`,
         ].join("\n");
-        const blockBytes = Buffer.byteLength(binaryNotice, "utf8") + 1;
+        const blockBytes = Buffer.byteLength(binaryNotice, "utf8");
         if (accumulatedBytes + blockBytes <= maxTotalBytes) {
           diffBlocks.push(binaryNotice);
           filesIncluded.push(rel);
-          accumulatedBytes += blockBytes;
+          entries.push({
+            path: safeDisplayPath,
+            diff: binaryNotice,
+            bytes: blockBytes,
+            lines: 3,
+            isBinary: true,
+            truncated: false,
+          });
+          accumulatedBytes += blockBytes + 1;
           accumulatedLines += 3;
         } else {
           skippedFiles.push(rel);
@@ -128,7 +159,7 @@ export async function buildUntrackedFileDiffs(
       const sanitized = sanitizeExecutionOutput(fileData.content);
       if (!sanitized.allowed) {
         skippedFiles.push(rel);
-        warnings.push(`Untracked file '${rel}' was excluded: contained sensitive credentials or private key.`);
+        warnings.push(`Untracked file '${safeDisplayPath}' was excluded: contained sensitive credentials or private key.`);
         continue;
       }
 
@@ -144,10 +175,10 @@ export async function buildUntrackedFileDiffs(
       }
 
       const diffHeader = [
-        `diff --git a/${rel} b/${rel}`,
+        `diff --git a/${safeDisplayPath} b/${safeDisplayPath}`,
         `new file mode 100644`,
         `--- /dev/null`,
-        `+++ b/${rel}`,
+        `+++ b/${safeDisplayPath}`,
         `@@ -0,0 +1,${linesToInclude.length} @@`,
       ].join("\n");
 
@@ -155,18 +186,30 @@ export async function buildUntrackedFileDiffs(
       let fullBlock = `${diffHeader}\n${diffBody}`;
 
       if (fileTruncated) {
-        fullBlock += `\n... (file '${rel}' diff truncated to stay within budget)`;
+        fullBlock += `\n... (file '${safeDisplayPath}' diff truncated to stay within budget)`;
         truncated = true;
       }
 
-      const blockBytes = Buffer.byteLength(fullBlock, "utf8") + 1;
+      const blockBytes = Buffer.byteLength(fullBlock, "utf8");
       if (accumulatedBytes + blockBytes > maxTotalBytes) {
-        // Truncate block to fit remaining byte budget
+        // Truncate block to fit remaining byte budget using UTF-8 safe boundary truncation
         const remainingBytes = Math.max(0, maxTotalBytes - accumulatedBytes);
-        if (remainingBytes > Buffer.byteLength(diffHeader, "utf8") + 30) {
-          const cutBody = Buffer.from(fullBlock, "utf8").subarray(0, remainingBytes).toString("utf8");
-          diffBlocks.push(`${cutBody}\n... (diff truncated)`);
+        if (remainingBytes > Buffer.byteLength(diffHeader, "utf8") + 35) {
+          const { text: safeCutBlock } = truncateUtf8ToBytes(
+            fullBlock,
+            remainingBytes,
+            `\n... (diff truncated at ${remainingBytes} bytes)`
+          );
+          diffBlocks.push(safeCutBlock);
           filesIncluded.push(rel);
+          entries.push({
+            path: safeDisplayPath,
+            diff: safeCutBlock,
+            bytes: Buffer.byteLength(safeCutBlock, "utf8"),
+            lines: linesToInclude.length + 5,
+            isBinary: false,
+            truncated: true,
+          });
           accumulatedBytes = maxTotalBytes;
           truncated = true;
         } else {
@@ -178,7 +221,15 @@ export async function buildUntrackedFileDiffs(
 
       diffBlocks.push(fullBlock);
       filesIncluded.push(rel);
-      accumulatedBytes += blockBytes;
+      entries.push({
+        path: safeDisplayPath,
+        diff: fullBlock,
+        bytes: blockBytes,
+        lines: linesToInclude.length + 5,
+        isBinary: false,
+        truncated: fileTruncated,
+      });
+      accumulatedBytes += blockBytes + 1;
       accumulatedLines += linesToInclude.length + 5;
     } catch (err) {
       skippedFiles.push(relPath);
@@ -186,13 +237,21 @@ export async function buildUntrackedFileDiffs(
     }
   }
 
+  const rawFormatted = diffBlocks.join("\n\n");
+  const { text: finalFormatted, sizeBytes: finalBytes } = truncateUtf8ToBytes(
+    rawFormatted,
+    maxTotalBytes,
+    "\n... (untracked diffs truncated)"
+  );
+
   return {
-    formattedDiff: diffBlocks.join("\n\n"),
+    formattedDiff: finalFormatted,
     filesIncluded,
     skippedFiles,
-    totalBytes: accumulatedBytes,
+    totalBytes: finalBytes,
     totalLines: accumulatedLines,
-    truncated,
+    truncated: truncated || finalBytes < Buffer.byteLength(rawFormatted, "utf8"),
     warnings,
+    entries,
   };
 }

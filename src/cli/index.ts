@@ -32,7 +32,7 @@ import { mergeUiPrefs, readUiPrefs, SETUP_MODES, type SetupMode } from "../confi
 import {
   CHATGPT_CREATE_CONNECTOR_URL,
   CHATGPT_DEVELOPER_MODE_URL,
-  CHATGPT_PLUGINS_URL,
+  CHATGPT_APPS_URL,
   DEFAULT_CONNECTOR_NAME,
   connectorAction,
   connectorNameFor,
@@ -494,7 +494,7 @@ program
       previousMcpUrl: lastEndpoint?.mcpUrl ?? null,
       pages: {
         developerMode: CHATGPT_DEVELOPER_MODE_URL,
-        plugins: CHATGPT_PLUGINS_URL,
+        plugins: CHATGPT_APPS_URL,
         createConnector: CHATGPT_CREATE_CONNECTOR_URL,
       },
     };
@@ -801,6 +801,7 @@ bundleCmd
   .option("-w, --workspace <path>", "workspace root (defaults to current directory)")
   .requiredOption("--task <id>", "task ID (e.g. c2c_0123456789abcdef)")
   .requiredOption("--iteration <n>", "iteration number (e.g. 1)")
+  .option("--chunk <n>", "review chunk number for large changesets (default: 1)", "1")
   .option(
     "--diff-mode <mode>",
     "diff comparison mode: head | unstaged | staged (head includes all staged + unstaged changes relative to HEAD; default: head)",
@@ -813,6 +814,7 @@ bundleCmd
     workspace?: string;
     task: string;
     iteration: string;
+    chunk?: string;
     diffMode: string;
     output: boolean;
     outputId?: string;
@@ -829,6 +831,7 @@ bundleCmd
         workspaceRoot: root,
         taskId: opts.task,
         iteration: parseInt(opts.iteration, 10),
+        chunk: opts.chunk ? parseInt(opts.chunk, 10) : 1,
         diffMode: mode as "unstaged" | "staged" | "head",
         includeOutput: opts.output,
         outputId: opts.outputId ? parseInt(opts.outputId, 10) : undefined,

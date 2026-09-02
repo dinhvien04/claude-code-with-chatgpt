@@ -72,9 +72,9 @@
 ```
 
 - **Dual-Plane Separation**:
-  - **Control Plane**: Claude Code and ChatGPT exchange minimal, structured `[C2C]` state messages (`INIT → PLAN → EXECUTED → REVIEW → DONE`). Message payloads are strictly under 1 KB. No file contents, logs, or diffs are pasted directly.
+  - **Control Plane**: Claude Code and ChatGPT exchange minimal, structured `[C2C]` state messages (`INIT → PLAN → EXECUTED → REVIEW → DONE`). In MCP Mode, message payloads are strictly under 1 KB and no file contents, logs, or diffs are pasted directly [MCP-Mode-Only]. In Mode P, bounded, sanitized context packages are generated with strict byte caps.
   - **Data Plane (Read-Only MCP)**: ChatGPT queries workspace structure, files, git diffs, and test output on demand via 9 read-only MCP tools (`workspace_info`, `list_directory`, `read_file`, `search_workspace`, `git_status`, `git_diff`, `test_status`, `execution_summary`, `execution_output`).
-- **Independent Verification Loop**: After Claude Code implements changes, ChatGPT inspects the actual git diff and sanitized execution records through MCP rather than blindly trusting local test reports.
+- **Independent Verification Loop**: After Claude Code implements changes, ChatGPT inspects the actual git diff and sanitized execution records through MCP (or bounded review diff packages in Mode P) rather than blindly trusting local test reports.
 
 ---
 
@@ -132,7 +132,7 @@ Please install and configure "claude-code-with-chatgpt" for Mode P (Local Manual
 
 ## Quickstart & Usage · 快速上手
 
-### 1. Manual Installation
+### 1. Common Installation
 ```bash
 # Clone the repository
 git clone https://github.com/dinhvien04/claude-code-with-chatgpt.git ~/claude-code-with-chatgpt
@@ -146,52 +146,65 @@ corepack pnpm build
 npm link
 ```
 
-### 2. Configure Claude Code Skill & Settings
-Ensure `.claude/skills/chatgpt-collab/SKILL.md` is present in your project root or `~/.claude/skills/chatgpt-collab/SKILL.md`.
+### 2. Choose Your Workflow
 
-In your target project workspace, run `config-allow` to configure minimal required permissions and sandbox state write paths:
-```bash
-c2c config-allow -w .
+```
+                         COMMON INSTALLATION
+                                  │
+          ┌───────────────────────┴───────────────────────┐
+          ▼                                               ▼
+   Option A: Mode P                               Option B: MCP Mode
+ (ChatGPT Plus / Free)                     (Pro / Business / Enterprise / Edu)
+          │                                               │
+   100% Local CLI                                  c2c config-allow -w .
+   Zero cloudflared                                c2c setup -w .
+   Zero bridge daemon                              Cloudflare Tunnel
+   Zero OAuth / pairing                            OAuth Pairing in ChatGPT
 ```
 
-### 3. Initialize the Bridge
-Inside your target project workspace:
-```bash
-c2c setup -w .
-```
-This command starts the loopback daemon, establishes a Cloudflare tunnel, and outputs:
-- **Public MCP Server URL** (e.g. `https://random-words.trycloudflare.com/mcp`)
-- **One-Time Pairing Code** (8 characters, 5-minute validity)
-- **Connector Name** (e.g. `Claude Code with ChatGPT · my-app`)
+---
 
-### 4. Connect in ChatGPT Web
+### Option A: Mode P (ChatGPT Plus / Free — 100% Local, Zero Daemon / Tunnel)
 
-#### Option A: ChatGPT Pro / Business / Enterprise / Edu (MCP Mode)
-1. Open ChatGPT Web -> **Settings** -> **Apps** -> **Advanced Settings** (or **Developer Mode**).
-   *(Note: Custom MCP connectors on Business, Enterprise, and Edu are subject to workspace admin permissions; on Pro they require Developer Mode where available).*
-2. Select **Add Custom App / Connector**:
-   - **Name**: `Claude Code with ChatGPT` (or your workspace connector name)
-   - **Server URL**: The `https://...trycloudflare.com/mcp` URL provided by `c2c setup`
-   - **Authentication**: `OAuth`
-3. Click **Connect** / **Authorize**, enter the 8-character pairing code in the browser window, and submit.
-4. In your ChatGPT conversation, send the **Boot Prompt** (see `docs/protocol.md` or via `/chatgpt-collab boot`) and ensure the C2C app is selected or `@mentioned` when asking ChatGPT to inspect the workspace.
+*Note: OpenAI currently restricts custom MCP server connectors to Pro, Business, Enterprise, and Edu plans. If using ChatGPT Plus or Free, Mode P runs 100% locally with zero cloudflared, zero tunnel, zero daemon, and zero setup prerequisites.*
 
-#### Option B: ChatGPT Plus / Free (Mode P — 100% Local Manual Context Handoff)
-*Note: OpenAI currently restricts custom MCP server connectors to Pro, Business, Enterprise, and Edu plans. If using ChatGPT Plus or Free, custom MCP is unavailable; use Mode P instead.*
-1. Mode P operates **100% locally with zero tunnel, zero daemon, and zero setup prerequisites**.
-2. In Claude Code CLI, run: `/chatgpt-collab --mode-p <goal>` or invoke the bundle generator directly:
+1. In Claude Code CLI, run `/chatgpt-collab --mode-p <goal>` or generate the planning package directly:
    ```bash
    c2c bundle plan -w . --goal "<goal>" --files "src/index.ts,src/app.ts"
    ```
-3. Paste the generated bounded `[C2C] STATE: INIT_P` package into your ChatGPT Plus chat. ChatGPT will analyze the context and return `[C2C] STATE: PLAN`.
-4. Claude Code executes the changes locally.
-5. Generate the complete review bundle (defaults to `head` mode to include staged, unstaged, and safe untracked changes):
+2. Paste the generated bounded `[C2C] STATE: INIT_P` package into ChatGPT Plus. ChatGPT returns `[C2C] STATE: PLAN`.
+3. Claude Code executes changes and tests locally.
+4. Generate the review bundle (defaults to `head` mode, covering staged, unstaged, and safe untracked changes with review chunking support):
    ```bash
-   c2c bundle review -w . --task <task_id> --iteration 1
+   c2c bundle review -w . --task c2c_0123456789abcdef --iteration 1
    ```
-6. Paste the `[C2C] STATE: EXECUTED_P` package into ChatGPT Plus for final audit.
+5. Paste `[C2C] STATE: EXECUTED_P` into ChatGPT Plus for audit. If changes span multiple chunks (`REVIEW_CHUNK: 1/N`), generate sequential chunks with `--chunk <n>` until `REVIEW_COMPLETE: true`.
 
-### 5. Running a Task
+---
+
+### Option B: MCP Mode (ChatGPT Pro / Business / Enterprise / Edu)
+
+1. Configure permissions in target workspace:
+   ```bash
+   c2c config-allow -w .
+   ```
+2. Initialize bridge daemon and Cloudflare tunnel:
+   ```bash
+   c2c setup -w .
+   ```
+   Outputs public MCP URL (e.g. `https://xxx.trycloudflare.com/mcp`), 8-character pairing code, and connector name.
+3. Open ChatGPT Web -> **Settings** -> **Apps** -> **Advanced Settings** (or **Developer Mode**).
+   *(Note: Custom MCP connectors on Business, Enterprise, and Edu are subject to workspace admin permissions; on Pro they require Developer Mode where available).*
+4. Select **Add Custom App / Connector**:
+   - **Name**: `Claude Code with ChatGPT`
+   - **Server URL**: `https://...trycloudflare.com/mcp`
+   - **Authentication**: `OAuth`
+5. Click **Connect** / **Authorize**, enter the 8-character pairing code, and submit.
+6. In your ChatGPT conversation, send the **Boot Prompt** (`/chatgpt-collab boot`) and select or `@mention` the connector app during prompts.
+
+---
+
+### 3. Running a Task
 In Claude Code CLI:
 ```text
 /chatgpt-collab Implement user authentication with JWT and refresh tokens

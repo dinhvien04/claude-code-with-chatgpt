@@ -84,7 +84,7 @@ Every control message uses structured `[C2C]` headers and sections. **Invariants
 ```text
 [C2C]
 STATE: INIT
-TASK_ID: c2c_f81a
+TASK_ID: c2c_0123456789abcdef
 ITERATION: 0
 EXECUTOR: claude-code
 
@@ -101,7 +101,7 @@ Produce an actionable C2C PLAN message.
 ```text
 [C2C]
 STATE: PLAN
-TASK_ID: c2c_f81a
+TASK_ID: c2c_0123456789abcdef
 ITERATION: 1
 
 GOAL:
@@ -136,7 +136,7 @@ SUCCESS_CRITERIA:
 ```text
 [C2C]
 STATE: EXECUTED
-TASK_ID: c2c_f81a
+TASK_ID: c2c_0123456789abcdef
 ITERATION: 1
 EXECUTOR: claude-code
 
@@ -159,7 +159,7 @@ If status is restricted, ignore it and review from git_diff.
 
 Before sending `EXECUTED`, Claude Code logs the iteration locally:
 ```bash
-c2c record --task c2c_f81a --iteration 1 --changed-files "src/context/ThemeContext.tsx,src/App.tsx,src/components/ThemeToggle.tsx,tests/ThemeContext.test.tsx" --tests "4 passed, 0 failed" --exit-status ok --command "pnpm test" --output-file /tmp/test-run.log
+c2c record --task c2c_0123456789abcdef --iteration 1 --changed-files "src/context/ThemeContext.tsx,src/App.tsx,src/components/ThemeToggle.tsx,tests/ThemeContext.test.tsx" --tests "4 passed, 0 failed" --exit-status ok --command "pnpm test" --output-file /tmp/test-run.log
 ```
 
 ### 4. DONE / BLOCKED (ChatGPT → Claude Code)
@@ -167,7 +167,7 @@ c2c record --task c2c_f81a --iteration 1 --changed-files "src/context/ThemeConte
 ```text
 [C2C]
 STATE: DONE
-TASK_ID: c2c_f81a
+TASK_ID: c2c_0123456789abcdef
 ITERATION: 1
 
 SUMMARY:
@@ -177,7 +177,7 @@ Verified `git_diff` and `execution_output`. The `ThemeContext` implementation co
 ```text
 [C2C]
 STATE: BLOCKED
-TASK_ID: c2c_f81a
+TASK_ID: c2c_0123456789abcdef
 ITERATION: 2
 
 REASON:
@@ -194,7 +194,7 @@ When switching conversations or recovering a lost session, Claude Code transmits
 ```text
 [C2C]
 STATE: HANDOFF
-TASK_ID: c2c_f81a
+TASK_ID: c2c_0123456789abcdef
 ITERATION: 2
 EXECUTOR: claude-code
 
