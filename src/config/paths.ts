@@ -31,14 +31,34 @@ export function ensureDir(dir: string): string {
   return dir;
 }
 
-/** Write a JSON file with owner-only permissions. */
+/** Write a JSON file with owner-only permissions and atomic replacement. */
 export function writeSecureJson(file: string, data: unknown): void {
-  ensureDir(path.dirname(file));
-  fs.writeFileSync(file, JSON.stringify(data, null, 2), { mode: 0o600 });
+  const dir = ensureDir(path.dirname(file));
+  const tempFile = path.join(
+    dir,
+    `.${path.basename(file)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`
+  );
+  fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), { mode: 0o600 });
   try {
-    fs.chmodSync(file, 0o600);
+    fs.chmodSync(tempFile, 0o600);
   } catch {
     // best effort on platforms without chmod semantics
+  }
+  try {
+    fs.renameSync(tempFile, file);
+  } catch {
+    // Fallback if cross-device or Windows locked rename occurs
+    try {
+      fs.copyFileSync(tempFile, file);
+      fs.unlinkSync(tempFile);
+    } catch {
+      fs.writeFileSync(file, JSON.stringify(data, null, 2), { mode: 0o600 });
+      try {
+        fs.unlinkSync(tempFile);
+      } catch {
+        /* ignore */
+      }
+    }
   }
 }
 

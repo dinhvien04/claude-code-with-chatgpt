@@ -25,9 +25,9 @@ describe("ui prefs", () => {
     expect(prefs.setupMode).toBeNull();
     expect(prefs.remembered).toEqual({ developerMode: false, setupMode: false });
     expect(prefs.setupChoicePrompt).toBe(SETUP_CHOICE_PROMPT);
-    expect(prefs.setupChoicePrompt).toContain("AI 自动化配置（预览版）");
-    expect(prefs.setupChoicePrompt).toContain("手动教学配置");
-    expect(prefs.setupChoicePrompt).toContain("请回复「1」或「2」");
+    expect(prefs.setupChoicePrompt).toContain("AI Automated Setup");
+    expect(prefs.setupChoicePrompt).toContain("Manual Guided Setup");
+    expect(prefs.setupChoicePrompt).toContain("reply with '1' or '2'");
   });
 
   it("remembers developer mode as on only, never as off", () => {

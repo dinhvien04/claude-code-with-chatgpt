@@ -123,13 +123,13 @@ export class Workspace {
     if (typeof requested !== "string" || requested.includes("\0")) {
       throw new WorkspaceError("INVALID_PATH", "Invalid path");
     }
-    let p = requested.trim();
-    if (p === "" || p === "/") p = ".";
+    let p = requested;
+    if (p.trim() === "" || p.trim() === "/") p = ".";
     // Normalize separators so Windows-style input behaves identically everywhere.
     p = p.replace(/\\/g, "/");
     // Strip a "workspace:/" alias prefix if the model echoes it back.
     p = p.replace(/^workspace:\/*/i, "");
-    if (p === "") p = ".";
+    if (p.trim() === "") p = ".";
 
     // Reject NTFS Alternate Data Streams (::$DATA, :stream) and invalid colons
     if (/^[a-zA-Z]:\//.test(p)) {
@@ -140,12 +140,16 @@ export class Workspace {
       throw new WorkspaceError("INVALID_PATH", "Invalid path: alternate data streams and colon-delimited paths are forbidden");
     }
 
-    // Reject path segments ending with trailing dots or spaces
+    // Reject path segments ending with trailing dots or spaces, and Windows DOS reserved device names
     const segments = p.split("/");
+    const DOS_DEVICE_RE = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i;
     for (const seg of segments) {
       if (seg !== "." && seg !== ".." && seg !== "") {
         if (seg.endsWith(".") || seg.endsWith(" ")) {
           throw new WorkspaceError("INVALID_PATH", "Invalid path: trailing dots and spaces in path segments are forbidden");
+        }
+        if (DOS_DEVICE_RE.test(seg)) {
+          throw new WorkspaceError("INVALID_PATH", `Invalid path: '${seg}' is a reserved device name`);
         }
       }
     }

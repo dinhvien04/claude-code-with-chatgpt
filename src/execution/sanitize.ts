@@ -1,3 +1,4 @@
+import os from "node:os";
 import { redact } from "../logger/index.js";
 
 export const MAX_OUTPUT_BYTES = 64 * 1024;
@@ -26,7 +27,15 @@ export type SanitizeResult =
   | { allowed: false; reason: string };
 
 function redactHomePaths(text: string): string {
-  return text
+  let out = text;
+  const home = os.homedir();
+  if (home && home !== "/" && home !== "\\") {
+    const posixHome = home.replace(/\\/g, "/");
+    const winHome = home.replace(/\//g, "\\");
+    out = out.split(posixHome).join("/home/[user]");
+    out = out.split(winHome).join("C:\\Users\\[user]");
+  }
+  return out
     .replace(/\/Users\/[^/\s"'`]+/gi, "/Users/[user]")
     .replace(/\/home\/[^/\s"'`]+/gi, "/home/[user]")
     .replace(/\b[a-zA-Z]:[/\\]Users[/\\][^/\\\s"'`]+/gi, (match) => {

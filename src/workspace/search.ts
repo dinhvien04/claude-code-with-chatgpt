@@ -117,7 +117,15 @@ async function searchWithNode(
   opts: SearchOptions,
   limit: number
 ): Promise<SearchResult> {
-  const matcher = opts.regex ? new RegExp(opts.query, "i") : null;
+  let matcher: RegExp | null = null;
+  if (opts.regex) {
+    try {
+      matcher = new RegExp(opts.query, "i");
+    } catch {
+      // Invalid regular expression: return empty result safely instead of throwing
+      return { matches: [], matchCount: 0, truncated: false, engine: "node" };
+    }
+  }
   const needle = opts.query.toLowerCase();
   const globRegex = opts.glob ? globToRegex(opts.glob) : null;
   const matches: SearchMatch[] = [];

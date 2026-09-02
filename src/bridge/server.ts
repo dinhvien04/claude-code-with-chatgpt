@@ -98,11 +98,9 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
   app.set("trust proxy", "loopback");
   app.disable("x-powered-by");
 
-  const getBaseUrl = (req: Request): string => {
+  const getBaseUrl = (_req: Request): string => {
     if (publicBaseUrl) return publicBaseUrl;
-    const proto = req.protocol;
-    const hostHeader = req.get("host") ?? `${host}:${port}`;
-    return `${proto}://${hostHeader}`;
+    return `http://${host}:${port}`;
   };
 
   // ---- Health (public but minimal) ---------------------------------------

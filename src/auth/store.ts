@@ -69,6 +69,7 @@ export type VerifyTokenResult =
 const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
+const MAX_REGISTERED_CLIENTS = 100;
 
 function sha256hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -134,6 +135,10 @@ export class AuthStore {
   // ---- Dynamic Client Registration -------------------------------------
 
   registerClient(input: { clientName?: string; redirectUris: string[] }): ClientRegistration {
+    if (this.clients.size >= MAX_REGISTERED_CLIENTS) {
+      const oldestKey = this.clients.keys().next().value;
+      if (oldestKey) this.clients.delete(oldestKey);
+    }
     const client: ClientRegistration = {
       clientId: `c2c_client_${randomBytes(12).toString("base64url")}`,
       clientName: input.clientName,

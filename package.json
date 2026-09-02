@@ -17,9 +17,19 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
+  "files": [
+    "bin",
+    "dist",
+    "skill",
+    ".claude",
+    "docs",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
   "packageManager": "pnpm@11.24.0",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "latest",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "commander": "^14.0.0",
     "express": "^5.1.0",
     "ignore": "^7.0.5",
